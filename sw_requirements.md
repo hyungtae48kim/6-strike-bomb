@@ -1,0 +1,19 @@
+I would like to make a lottery number selection program which is the following requirements.
+- we have 45 numbers which are 1 to 45.
+- I want you to pick 6 numbers from them to get a win for lottery prize.
+- make a software to get winning numbers
+  - python based
+  - we have 45 numbers which are 1 to 45.
+  - I want to pick 6 numbers from them to get a win for lottery prize.
+  - make a software to get winning numbers
+    - python based
+    - research about lottery number selection algorithm.
+    - The algorithm I want to use
+      - GNN, Graph Neural Network to solve this like a graph problem.
+      - any other mathmatical or machine learning algorithm for this problem.  
+    - The algorithm part should be replaced easily.
+    - Input: 
+      - 45 numbers which are 1 to 45.
+      - the history of winning numbers.(AI LLM or Agent should be able to get this from the web)
+    - Output: 6 numbers from them to get a win for lottery prize.
+ - UI or UX should be shown in Korean.
