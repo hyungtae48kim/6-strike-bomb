@@ -1,13 +1,13 @@
-from .base_model import LottoModel
+import numpy as np
 import pandas as pd
-import random
-from collections import Counter
 from typing import List
+from .base_model import LottoModel
+from collections import Counter
 
 class StatsModel(LottoModel):
     def __init__(self):
+        self.z_scores = {}
         self.frequencies = Counter()
-        self.hot_numbers = []
     
     def train(self, df: pd.DataFrame):
         # Flatten all winning numbers into a single list
@@ -15,31 +15,44 @@ class StatsModel(LottoModel):
         for i in range(1, 7):
             all_numbers.extend(df[f'drwtNo{i}'].tolist())
         
-        # Calculate frequency
+        # 1. Theoretical Expectations
+        total_draws_count = len(df)
+        
+        # Probability of a specific number appearing in one draw (6 balls out of 45)
+        p_occurrence = 6 / 45
+        
+        # Expected frequency for a specific number over N draws
+        expected_freq = total_draws_count * p_occurrence
+        
+        # Standard Deviation for Binomial Distribution B(n, p)
+        std_dev = np.sqrt(total_draws_count * p_occurrence * (1 - p_occurrence))
+        
+        # 2. Calculate Z-Scores
         self.frequencies = Counter(all_numbers)
+        self.z_scores = {}
         
-        # Determine "hot" numbers (top 20 most frequent)
-        self.hot_numbers = [num for num, count in self.frequencies.most_common(20)]
-
+        for num in range(1, 46):
+            obs_freq = self.frequencies[num]
+            if std_dev > 0:
+                z = (obs_freq - expected_freq) / std_dev
+            else:
+                z = 0
+            self.z_scores[num] = z
+            
     def predict(self) -> List[int]:
-        # Simple Logic: 
-        # Pick 3 numbers from "hot" numbers (weighted by frequency)
-        # Pick 3 numbers randomly from the rest to add variety
+        if not self.z_scores:
+            # Fallback if not trained: random selection
+            return sorted(np.random.choice(range(1, 46), size=6, replace=False).tolist())
         
-        all_nums = list(range(1, 46))
+        numbers = list(range(1, 46))
+        z_values = np.array([self.z_scores[n] for n in numbers])
         
-        # Weighted selection for hot numbers
-        weights = [self.frequencies[n] for n in self.hot_numbers]
-        # Normalize weights
-        total_w = sum(weights)
-        weights = [w/total_w for w in weights]
+        # 3. Weighting using Softmax on Z-Scores to highlight "hot" numbers
+        # Numerical stability shift
+        e_z = np.exp(z_values - np.max(z_values)) 
+        weights = e_z / e_z.sum()
         
-        full_prediction = list(np_choice(self.hot_numbers, size=6, replace=False, p=weights))
-        return sorted(full_prediction)
-
-# Helper to avoid numpy dependency in this simple file if possible, 
-# but we have numpy in requirements so let's use it for weighted choice
-import numpy as np
-
-def np_choice(a, size, replace, p):
-    return np.random.choice(a, size=size, replace=replace, p=p)
+        # Select 6 numbers without replacement
+        selected = np.random.choice(numbers, size=6, replace=False, p=weights)
+        
+        return sorted(selected.tolist())
