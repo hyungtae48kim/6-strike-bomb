@@ -4,6 +4,7 @@ import os
 from utils.fetcher import fetch_latest_data, load_data
 from models.stats_model import StatsModel
 from models.gnn_model import GNNModel
+from models.bayes_model import BayesModel
 
 st.set_page_config(page_title="6-Strike-Bomb 로또 예측기", page_icon="🎱")
 
@@ -29,7 +30,7 @@ st.info(f"현재 데이터: **{len(df)}** 회차까지 저장되어 있습니다
 # Model Selection
 model_name = st.selectbox(
     "알고리즘 선택 (Select Algorithm)",
-    ["통계 기반 (Stats Based)", "GNN (Graph Neural Network)"]
+    ["통계 기반 (Stats Based)", "GNN (Graph Neural Network)", "베이즈 정리 기반 (Bayes Theorem)"]
 )
 
 # Generate Button
@@ -41,6 +42,8 @@ if st.button("예측 번호 생성 (Generate Prediction)"):
                 model = StatsModel()
             elif "GNN" in model_name:
                 model = GNNModel()
+            elif "Bayes" in model_name:
+                model = BayesModel()
             
             # Train on the spot (fast enough for this scale)
             model.train(df)
