@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-from utils.fetcher import fetch_latest_data, load_data
+from utils.fetcher import fetch_latest_data, load_data, add_manual_data
 from utils.history_manager import HistoryManager
 from models.stats_model import StatsModel
 from models.gnn_model import GNNModel
@@ -17,18 +17,68 @@ st.markdown("### 인공지능 기반 로또 번호 예측 시스템")
 # Initialize History Manager
 history_manager = HistoryManager()
 
+# Load Data
+df = load_data()
+
+
 # Sidebar
 st.sidebar.header("설정 (Settings)")
 
 if st.sidebar.button("데이터 업데이트 (Update Data)"):
     with st.spinner("데이터를 가져오는 중입니다... (Fetching Data...)"):
-        df = fetch_latest_data()
+        df, message = fetch_latest_data()
         # Also update hit counts processing
         history_manager.update_hit_counts(df)
-        st.sidebar.success(f"데이터 업데이트 완료! 총 {len(df)} 회차")
+        if "성공" in message:
+            st.sidebar.success(message)
+        else:
+            st.sidebar.warning(message)
 
-# Load Data
-df = load_data()
+# Manual Update Section
+with st.sidebar.expander("수동 입력 (Manual Update)"):
+    st.markdown("API 오류 시 직접 입력하세요.")
+    
+    # Calculate next draw number and date
+    last_draw = 1
+    last_date = None
+    if not df.empty:
+        last_draw = int(df['drwNo'].max())
+        last_date = pd.to_datetime(df[df['drwNo'] == last_draw]['drwNoDate'].values[0])
+    
+    next_draw = last_draw + 1
+    next_date = (last_date + pd.Timedelta(days=7)).date() if last_date else datetime.today().date()
+    
+    m_drwNo = st.number_input("회차 (Draw No)", min_value=1, value=next_draw, step=1)
+    m_date = st.date_input("날짜 (Date)", value=next_date)
+    
+    st.markdown("당첨 번호 (Winning Numbers)")
+    c1, c2, c3 = st.columns(3)
+    n1 = c1.number_input("No 1", min_value=1, max_value=45, key="n1")
+    n2 = c2.number_input("No 2", min_value=1, max_value=45, key="n2")
+    n3 = c3.number_input("No 3", min_value=1, max_value=45, key="n3")
+    
+    c4, c5, c6 = st.columns(3)
+    n4 = c4.number_input("No 4", min_value=1, max_value=45, key="n4")
+    n5 = c5.number_input("No 5", min_value=1, max_value=45, key="n5")
+    n6 = c6.number_input("No 6", min_value=1, max_value=45, key="n6")
+    
+    bonus = st.number_input("보너스 (Bonus)", min_value=1, max_value=45, key="bn")
+    
+    if st.button("저장 (Save)"):
+        nums = [n1, n2, n3, n4, n5, n6]
+        if len(set(nums)) != 6:
+            st.error("중복된 번호가 있습니다!")
+        elif bonus in nums:
+             st.error("보너스 번호가 당첨 번호와 겹칩니다!")
+        else:
+            success, msg = add_manual_data(m_drwNo, m_date.strftime("%Y-%m-%d"), sorted(nums), bonus)
+            if success:
+                st.success(msg)
+                st.rerun()
+            else:
+                st.error(msg)
+
+# Data Check
 if df.empty:
     st.warning("데이터가 없습니다. 사이드바에서 '데이터 업데이트'를 눌러주세요.")
     st.stop()
