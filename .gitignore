@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 data/*.csv
 .DS_Store
+models/__pycache__/base_model.cpython-312.pyc
+models/__pycache__/gnn_model.cpython-312.pyc
+models/__pycache__/stats_model.cpython-312.pyc
+utils/__pycache__/fetcher.cpython-312.pyc
