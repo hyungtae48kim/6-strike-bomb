@@ -6,3 +6,5 @@ torch_geometric
 networkx
 numpy
 scikit-learn
+scipy
+python-louvain

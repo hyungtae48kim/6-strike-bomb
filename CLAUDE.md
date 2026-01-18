@@ -208,13 +208,61 @@ streamlit run app.py
 - 브라우저 캐시 삭제
 - `streamlit run app.py` 재실행
 
-## 추가 개선 아이디어
+## Ultimate Ensemble 시스템 (v2.0)
 
-1. **모델 앙상블 고도화**: 동적 가중치 조정 알고리즘 개선
-2. **시각화 추가**: 적중률 그래프, 번호 빈도 차트
-3. **API 안정성**: 재시도 로직, 백업 데이터 소스
-4. **성능 최적화**: 모델 캐싱, 예측 속도 개선
-5. **테스트 커버리지**: 단위 테스트, 통합 테스트 추가
+### 개요
+10개의 AI 모델을 통합한 메타 앙상블 시스템입니다.
+
+### 모델 아키텍처
+```
+                    ┌─────────────────────────────────────┐
+                    │      UltimateEnsembleModel          │
+                    │   (최종 메타 앙상블 - 확률 통합)     │
+                    └──────────────────┬──────────────────┘
+                                       │
+           ┌───────────────────────────┼───────────────────────────┐
+           │                           │                           │
+    ┌──────▼──────┐            ┌───────▼───────┐           ┌───────▼───────┐
+    │  Tier 1     │            │   Tier 2      │           │   Tier 3      │
+    │ 기존 모델   │            │  딥러닝/그래프 │           │  메타 전략    │
+    └──────┬──────┘            └───────┬───────┘           └───────┬───────┘
+           │                           │                           │
+    ┌──────┴──────┐            ┌───────┴───────┐           ┌───────┴───────┐
+    │ StatsModel  │            │  LSTMModel    │           │ PatternModel  │
+    │ BayesModel  │            │ TransformerM  │           │ MonteCarloM   │
+    │ GNNModel    │            │ PageRankModel │           └───────────────┘
+    └─────────────┘            │ CommunityM    │
+                               │ MarkovModel   │
+                               └───────────────┘
+```
+
+### 신규 모델 파일
+| 모델 | 파일 | 알고리즘 |
+|------|------|----------|
+| LSTM | [lstm_model.py](models/lstm_model.py) | 시계열 딥러닝 |
+| Transformer | [transformer_model.py](models/transformer_model.py) | Self-Attention |
+| PageRank | [pagerank_model.py](models/pagerank_model.py) | 그래프 중심성 |
+| Community | [community_model.py](models/community_model.py) | 클러스터 탐지 |
+| Markov | [markov_model.py](models/markov_model.py) | 전이 확률 |
+| Pattern | [pattern_model.py](models/pattern_model.py) | 패턴 분석 |
+| MonteCarlo | [montecarlo_model.py](models/montecarlo_model.py) | 시뮬레이션 |
+| Ultimate | [ultimate_ensemble_model.py](models/ultimate_ensemble_model.py) | 메타 앙상블 |
+
+### 핵심 기술
+1. **확률 분포 기반 통합**: 모든 모델이 45차원 확률 벡터 반환
+2. **동적 가중치**: 과거 성능 기반 자동 조정 (지수 감쇠)
+3. **다양성 보장**: 모델 간 상관관계 페널티
+
+### 사용 방법
+```python
+from models.ultimate_ensemble_model import UltimateEnsembleModel
+
+model = UltimateEnsembleModel()
+model.train(df)
+prediction = model.predict()  # 6개 번호
+multi = model.predict_multiple(5)  # 5세트
+top_nums = model.get_top_numbers(10)  # 상위 10개
+```
 
 ## 라이선스 및 면책
 

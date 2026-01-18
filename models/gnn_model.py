@@ -30,10 +30,16 @@ class GCN(torch.nn.Module):
         return torch.sigmoid(x)
 
 class GNNModel(LottoModel):
+    """
+    Graph Neural Network 기반 로또 예측 모델.
+    번호 간 동시 출현 패턴을 그래프로 분석합니다.
+    """
+
     def __init__(self):
         self.model = None
         self.data_graph = None
         self.node_features = None
+        self._probability_dist = None
     
     def _build_graph(self, df):
         # Nodes: 0 to 44 (representing 1 to 45)
@@ -134,14 +140,37 @@ class GNNModel(LottoModel):
             
         print("GNN Training complete.")
 
+        # 확률 분포 계산
+        self._compute_probability_distribution()
+
+    def _compute_probability_distribution(self):
+        """GNN 스코어 기반 확률 분포 계산"""
+        if self.model is None:
+            self._probability_dist = np.ones(45) / 45
+            return
+
+        self.model.eval()
+        with torch.no_grad():
+            pred_scores = self.model(self.data_graph).flatten().numpy()
+
+        # Softmax로 확률 분포 변환
+        exp_scores = np.exp(pred_scores - np.max(pred_scores))
+        self._probability_dist = exp_scores / exp_scores.sum()
+
+    def get_probability_distribution(self) -> np.ndarray:
+        """45차원 확률 벡터 반환"""
+        if self._probability_dist is None:
+            return np.ones(45) / 45
+        return self._probability_dist.copy()
+
     def predict(self):
         self.model.eval()
         with torch.no_grad():
             pred_scores = self.model(self.data_graph).flatten()
-            
-        # Get top 6 indices
+
+        # 상위 6개 인덱스 추출
         _, top_indices = torch.topk(pred_scores, 6)
-        
-        # Convert back to 1-based indexing
+
+        # 1-based 인덱싱으로 변환
         prediction = [idx.item() + 1 for idx in top_indices]
         return sorted(prediction)
