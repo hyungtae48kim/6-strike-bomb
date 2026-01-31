@@ -20,6 +20,17 @@ from models.enums import AlgorithmType
 
 st.set_page_config(page_title="6-Strike-Bomb 로또 예측기", page_icon="🎱", layout="wide")
 
+# 한글 폰트 및 이모지 설정 (Linux 환경 깨짐 방지)
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+html, body, [class*="css"] {
+    font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🎱 6-Strike-Bomb 로또 6/45 예측기")
 st.markdown("### Ultimate AI 기반 로또 번호 예측 시스템")
 st.markdown("*10개 AI 모델을 통합한 메타 앙상블 시스템*")
