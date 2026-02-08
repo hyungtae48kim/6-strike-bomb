@@ -12,6 +12,7 @@ from .community_model import CommunityModel
 from .markov_model import MarkovModel
 from .pattern_model import PatternModel
 from .montecarlo_model import MonteCarloModel
+from .deepsets_model import DeepSetsModel
 from .enums import AlgorithmType
 
 
@@ -21,7 +22,7 @@ class UltimateEnsembleModel(LottoModel):
 
     10개의 개별 모델을 통합하여 최종 예측을 생성합니다:
     - Tier 1 (기존): Stats, Bayes, GNN
-    - Tier 2 (딥러닝): LSTM, Transformer
+    - Tier 2 (딥러닝): LSTM, Transformer, DeepSets
     - Tier 3 (그래프): PageRank, Community
     - Tier 4 (확률/패턴): Markov, Pattern, MonteCarlo
 
@@ -29,6 +30,8 @@ class UltimateEnsembleModel(LottoModel):
     - 모든 모델의 45차원 확률 분포를 수집
     - 동적 가중치로 확률 통합
     - 다양성 보장 메커니즘
+    - 조건부 확률 기반 조합 샘플링 (CombinationScorer)
+    - 비현실적 조합 필터링 (CombinationFilter)
     """
 
     # 앙상블에 포함되지 않는 알고리즘 목록
@@ -44,13 +47,14 @@ class UltimateEnsembleModel(LottoModel):
         self.enable_diversity = enable_diversity
         self.diversity_weight = diversity_weight
 
-        # 모든 서브 모델 초기화
+        # 모든 서브 모델 초기화 (DeepSets 추가)
         self.models = {
             AlgorithmType.STATS.value: StatsModel(),
             AlgorithmType.BAYES.value: BayesModel(),
             AlgorithmType.GNN.value: GNNModel(),
             AlgorithmType.LSTM.value: LSTMModel(epochs=50),  # 빠른 학습
             AlgorithmType.TRANSFORMER.value: TransformerModel(epochs=50),
+            AlgorithmType.DEEPSETS.value: DeepSetsModel(epochs=50),
             AlgorithmType.PAGERANK.value: PageRankModel(),
             AlgorithmType.COMMUNITY.value: CommunityModel(),
             AlgorithmType.MARKOV.value: MarkovModel(),
@@ -61,12 +65,17 @@ class UltimateEnsembleModel(LottoModel):
         self._probability_dist = None
         self._model_predictions = {}
         self._model_probabilities = {}
+        self._combination_scorer = None
+        self._combination_filter = None
+        self._train_df = None
 
     def train(self, df: pd.DataFrame):
         """모든 서브 모델 학습"""
         print("=" * 50)
         print("Ultimate Ensemble 학습 시작")
         print("=" * 50)
+
+        self._train_df = df
 
         for name, model in self.models.items():
             print(f"\n[{name}] 학습 중...")
@@ -75,6 +84,16 @@ class UltimateEnsembleModel(LottoModel):
                 print(f"[{name}] 완료")
             except Exception as e:
                 print(f"[{name}] 오류 발생: {e}")
+
+        # 조합 스코어러 및 필터 초기화
+        try:
+            from utils.combination_scorer import CombinationScorer
+            from utils.analysis import CombinationFilter
+            self._combination_scorer = CombinationScorer(df)
+            self._combination_filter = CombinationFilter(df)
+            print("\n[조합 스코어러/필터] 초기화 완료")
+        except Exception as e:
+            print(f"\n[조합 스코어러/필터] 초기화 오류: {e}")
 
         # 확률 분포 통합
         self._compute_probability_distribution()
@@ -96,12 +115,23 @@ class UltimateEnsembleModel(LottoModel):
             AlgorithmType.GNN.value: 1.2,
             AlgorithmType.LSTM.value: 1.5,
             AlgorithmType.TRANSFORMER.value: 1.5,
+            AlgorithmType.DEEPSETS.value: 1.5,
             AlgorithmType.PAGERANK.value: 1.1,
             AlgorithmType.COMMUNITY.value: 1.0,
             AlgorithmType.MARKOV.value: 0.9,
             AlgorithmType.PATTERN.value: 1.2,
             AlgorithmType.MONTECARLO.value: 1.3,
         }
+
+        # 캐시된 메타 학습 가중치 시도
+        try:
+            from utils.meta_learner import MetaLearner
+            ml = MetaLearner()
+            cached = ml.load_cached_weights()
+            if cached and model_name in cached:
+                return max(cached[model_name], 0.1)
+        except Exception:
+            pass
 
         return default_weights.get(model_name, 1.0)
 
@@ -189,19 +219,29 @@ class UltimateEnsembleModel(LottoModel):
         return contributions
 
     def predict(self) -> List[int]:
-        """다음 회차 6개 번호 예측"""
+        """다음 회차 6개 번호 예측 (조건부 확률 + 필터링 적용)"""
         probs = self.get_probability_distribution()
 
-        # 확률 기반 가중 샘플링
+        # 조건부 확률 기반 샘플링 (번호 간 상관관계 반영)
+        if self._combination_scorer is not None:
+            combo = self._combination_scorer.adjusted_sampling(probs)
+            # 필터 통과 확인
+            if self._combination_filter is not None and self._combination_filter.filter(combo):
+                return combo
+
+        # 필터링된 샘플링 (필터 통과할 때까지 반복)
+        if self._combination_filter is not None:
+            return self._combination_filter.filtered_sampling(probs)
+
+        # fallback: 기본 샘플링
         numbers = list(range(1, 46))
         selected = np.random.choice(numbers, size=6, replace=False, p=probs)
-
         return sorted(selected.tolist())
 
     def predict_multiple(self, n_sets: int = 5) -> List[List[int]]:
         """
         여러 세트의 번호 예측.
-        각 세트는 서로 다양하도록 생성.
+        각 세트는 서로 다양하도록, 필터링을 적용하여 생성합니다.
         """
         probs = self.get_probability_distribution()
         numbers = list(range(1, 46))
@@ -217,11 +257,15 @@ class UltimateEnsembleModel(LottoModel):
 
             adjusted_probs = adjusted_probs / adjusted_probs.sum()
 
-            selected = np.random.choice(numbers, size=6, replace=False, p=adjusted_probs)
-            results.append(sorted(selected.tolist()))
+            # 조합 필터 적용 샘플링
+            if self._combination_filter is not None:
+                combo = self._combination_filter.filtered_sampling(adjusted_probs)
+            else:
+                selected = np.random.choice(numbers, size=6, replace=False, p=adjusted_probs)
+                combo = sorted(selected.tolist())
 
-            # 선택된 번호 기록
-            used_numbers.update(selected)
+            results.append(combo)
+            used_numbers.update(combo)
 
         return results
 

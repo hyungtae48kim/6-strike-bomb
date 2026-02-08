@@ -11,6 +11,7 @@ class AlgorithmType(Enum):
     # Tier 2: 딥러닝 모델
     LSTM = "LSTM"
     TRANSFORMER = "Transformer"
+    DEEPSETS = "DeepSets"
 
     # Tier 3: 그래프 알고리즘
     PAGERANK = "PageRank"
@@ -23,3 +24,4 @@ class AlgorithmType(Enum):
 
     # Ultimate: 메타 앙상블
     ULTIMATE = "Ultimate Ensemble"
+    STACKING = "Stacking Ensemble"

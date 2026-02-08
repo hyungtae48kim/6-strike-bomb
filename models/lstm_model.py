@@ -29,8 +29,8 @@ class LottoLSTM(nn.Module):
             nn.Linear(hidden_size, 128),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(128, 45),
-            nn.Softmax(dim=-1)
+            nn.Linear(128, 45)
+            # Softmax 제거: BCEWithLogitsLoss 사용을 위해 raw logits 출력
         )
 
     def forward(self, x):
@@ -107,7 +107,7 @@ class LSTMModel(LottoModel):
         ).to(self.device)
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        criterion = nn.BCELoss()
+        criterion = nn.BCEWithLogitsLoss()
 
         # 학습 루프
         self.model.train()
@@ -115,10 +115,8 @@ class LSTMModel(LottoModel):
             optimizer.zero_grad()
             outputs = self.model(X_tensor)
 
-            # 타겟 정규화 (6개 번호 합이 1이 되도록)
-            y_normalized = y_tensor / y_tensor.sum(dim=1, keepdim=True)
-
-            loss = criterion(outputs, y_normalized)
+            # 원본 이진 타겟 그대로 사용 (정규화 제거)
+            loss = criterion(outputs, y_tensor)
             loss.backward()
             optimizer.step()
 
@@ -152,8 +150,11 @@ class LSTMModel(LottoModel):
 
         self.model.eval()
         with torch.no_grad():
-            probs = self.model(last_seq_tensor).cpu().numpy().flatten()
+            logits = self.model(last_seq_tensor)
+            probs = torch.sigmoid(logits).cpu().numpy().flatten()
 
+        # 음수 방지 후 정규화
+        probs = np.clip(probs, 1e-10, None)
         self._probability_dist = probs / probs.sum()
 
     def get_probability_distribution(self) -> np.ndarray:

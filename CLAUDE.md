@@ -2,12 +2,18 @@
 
 ## 프로젝트 개요
 
-한국 로또 6/45 번호 예측 시스템입니다. 통계, GNN(Graph Neural Network), 베이즈 정리, 앙상블 등 다양한 알고리즘을 사용하여 로또 번호를 예측합니다.
+한국 로또 6/45 번호 예측 시스템입니다. 12개의 AI 모델을 통합한 메타 앙상블 시스템으로 예측 번호를 생성합니다.
 
 ### 핵심 기능
 - 로또 당첨 번호 자동 수집 (동행복권 API)
-- 다중 예측 알고리즘 지원 (Stats, GNN, Bayes, Weighted Ensemble)
+- 14개 알고리즘 지원 (Stats, GNN, Bayes, LSTM, Transformer, DeepSets, PageRank, Community, Markov, Pattern, MonteCarlo, Weighted/Ultimate/Stacking Ensemble)
 - 예측 피드백 루프 (과거 예측 결과 기반 알고리즘 가중치 동적 조정)
+- 조합 분석 (AC값, 끝수, 합계, 홀짝, 번호대 분포)
+- 조합 필터링 (역대 당첨번호 통계 기반 비현실적 조합 제거)
+- 조건부 확률 기반 조합 평가 (번호 간 동시출현 상관관계)
+- Walk-Forward 시간적 검증 (과적합 탐지)
+- 휠링 시스템 (수학적 커버리지 보장)
+- 스태킹 앙상블 (Ridge 메타 모델)
 - Streamlit 기반 한국어 UI
 - 수동 데이터 입력 기능
 
@@ -18,14 +24,29 @@
 ├── app.py                      # Streamlit 메인 애플리케이션
 ├── models/                     # 예측 알고리즘 모델들
 │   ├── base_model.py          # 추상 기본 클래스 (LottoModel)
+│   ├── enums.py               # AlgorithmType enum 정의 (14개)
 │   ├── stats_model.py         # 통계 기반 모델 (Z-score, softmax)
 │   ├── gnn_model.py           # Graph Neural Network 모델
 │   ├── bayes_model.py         # 베이즈 정리 기반 모델
-│   ├── weighted_ensemble_model.py  # 가중치 앙상블 모델
-│   └── enums.py               # AlgorithmType enum 정의
+│   ├── lstm_model.py          # LSTM 시계열 모델 (BCEWithLogitsLoss)
+│   ├── transformer_model.py   # Transformer 모델 (BCEWithLogitsLoss)
+│   ├── deepsets_model.py      # DeepSets+GRU 순서 불변 모델
+│   ├── pagerank_model.py      # PageRank 그래프 모델
+│   ├── community_model.py     # 커뮤니티 탐지 모델
+│   ├── markov_model.py        # 마르코프 체인 모델
+│   ├── pattern_model.py       # 패턴 분석 모델
+│   ├── montecarlo_model.py    # 몬테카를로 시뮬레이션 모델
+│   ├── weighted_ensemble_model.py    # 가중치 앙상블 모델
+│   ├── ultimate_ensemble_model.py    # Ultimate 메타 앙상블 모델
+│   └── stacking_ensemble_model.py    # 스태킹 앙상블 모델 (Ridge 메타)
 ├── utils/                     # 유틸리티 함수들
 │   ├── fetcher.py            # 데이터 수집 및 로드 함수
-│   └── history_manager.py    # 예측 히스토리 및 가중치 관리
+│   ├── history_manager.py    # 예측 히스토리 및 가중치 관리
+│   ├── analysis.py           # AC값, 끝수, 합계, 조합 필터
+│   ├── combination_scorer.py # 조건부 확률 기반 조합 평가
+│   ├── validation.py         # Walk-Forward 시간적 검증
+│   ├── wheeling.py           # 수학적 커버리지 휠링 시스템
+│   └── meta_learner.py       # BMA 및 교차검증 가중치 학습
 ├── data/                      # 데이터 파일들
 │   ├── lotto_history.csv     # 로또 당첨 번호 히스토리
 │   └── prediction_history.csv # 예측 히스토리 및 적중률
@@ -45,11 +66,31 @@ class LottoModel(ABC):
     def predict(self) -> List[int]:     # 6개 번호 예측 (1-45)
 ```
 
-#### 알고리즘 유형 ([enums.py](models/enums.py:3-7))
+#### 알고리즘 유형 ([enums.py](models/enums.py)) - 총 14개
+
+**Tier 1 - 기존 모델:**
 - **Stats Based**: Z-score와 softmax 가중치를 사용한 빈도 분석
 - **GNN**: 번호 간 동시 출현 패턴 그래프 분석
 - **Bayes Theorem**: 조건부 확률 기반 예측
 - **Weighted Ensemble**: 과거 적중률 기반 가중치 앙상블
+
+**Tier 2 - 딥러닝:**
+- **LSTM**: 시계열 딥러닝 (BCEWithLogitsLoss)
+- **Transformer**: Self-Attention 기반 패턴 인식 (BCEWithLogitsLoss)
+- **DeepSets**: 순서 불변 집합 인코딩 + GRU 시간적 모델
+
+**Tier 3 - 그래프:**
+- **PageRank**: 동시출현 그래프에서 PageRank 중심성 분석
+- **Community**: Louvain 알고리즘으로 번호 클러스터 탐지
+
+**Tier 4 - 확률/패턴:**
+- **Markov Chain**: 번호 전이 확률 기반 마르코프 체인
+- **Pattern Analysis**: 주기성, 간격, 합계 패턴 종합 분석
+- **Monte Carlo**: 몬테카를로 시뮬레이션으로 최적 조합 탐색
+
+**앙상블:**
+- **Ultimate Ensemble**: 11개 모델 통합 메타 앙상블 + 조합 필터/스코어러
+- **Stacking Ensemble**: 7개 모델의 확률 분포를 Ridge 메타 모델로 학습
 
 ### 2. 예측 피드백 시스템 ([history_manager.py](utils/history_manager.py))
 
@@ -63,6 +104,33 @@ class LottoModel(ABC):
 - 동행복권 API에서 자동 수집
 - 로컬 CSV 파일로 저장/로드
 - 수동 데이터 입력 지원 (API 오류 시)
+
+### 4. 조합 분석 및 필터링 ([analysis.py](utils/analysis.py))
+
+- `LottoAnalyzer`: AC값, 끝수 분포, 합계, 홀짝, 고저, 연번, 번호대 분포, 종합 점수
+- `CombinationFilter`: 역대 당첨번호 통계 기준으로 비현실적 조합 제거 (AC값, 합계, 연번, 홀짝, 끝수, 번호대)
+
+### 5. 조건부 확률 기반 조합 평가 ([combination_scorer.py](utils/combination_scorer.py))
+
+- `CombinationScorer`: 번호 간 동시출현 상관관계 행렬(45x45) 구축
+- 조건부 확률 기반 번호 선택 (이미 선택된 번호와 상관관계 높은 번호 우선)
+- `adjusted_sampling()`: 조건부 확률로 가중된 샘플링
+
+### 6. Walk-Forward 시간적 검증 ([validation.py](utils/validation.py))
+
+- `WalkForwardValidator`: 시간순 분할로 모델의 실제 예측력 측정
+- 과적합 탐지 (`detect_overfit()`): 학습-테스트 적중 차이로 과적합 진단
+
+### 7. 휠링 시스템 ([wheeling.py](utils/wheeling.py))
+
+- `WheelingSystem`: 후보 번호에서 수학적 커버리지를 보장하는 조합 세트 생성
+- 축약 휠 (Abbreviated Wheel): 그리디 알고리즘으로 최소 티켓 수 산출
+- 3/4/5-매치 보장 수준 선택 가능
+
+### 8. 메타 학습기 ([meta_learner.py](utils/meta_learner.py))
+
+- `MetaLearner`: Bayesian Model Averaging (BMA)으로 모델 확률 분포 통합
+- softmax 가중치, 캐시 저장/로드 지원
 
 ## Claude Code로 작업하는 방법
 
@@ -164,10 +232,11 @@ Streamlit UI는 [app.py](app.py)에 구현되어 있습니다:
 현재 브랜치: main
 
 최근 주요 커밋:
+- v3.0 보완: 조합 분석/필터, 조건부 확률 스코어러, Walk-Forward 검증, 휠링, 메타 학습기, DeepSets, 스태킹 앙상블
+- LSTM/Transformer BCEWithLogitsLoss 수정
+- Ultimate Ensemble에 CombinationScorer/Filter 통합
 - 수동 데이터 입력 기능 추가
 - 예측 피드백 루프 및 가중치 시스템 도입
-- BayesModel 추가
-- StatsModel Z-score 및 softmax 적용
 
 ## 개발 환경 설정
 
@@ -187,6 +256,7 @@ streamlit run app.py
 ## 테스트 및 검증
 
 프로젝트에는 여러 검증 스크립트가 있습니다:
+- [verify_enhancements.py](verify_enhancements.py): **전체 보완 사항 검증 (11개 테스트)**
 - [verify_script.py](verify_script.py): 기본 모델 검증
 - [verify_bayes.py](verify_bayes.py): 베이즈 모델 검증
 - [verify_feedback.py](verify_feedback.py): 피드백 시스템 검증
@@ -208,60 +278,94 @@ streamlit run app.py
 - 브라우저 캐시 삭제
 - `streamlit run app.py` 재실행
 
-## Ultimate Ensemble 시스템 (v2.0)
+## Ultimate Ensemble 시스템 (v3.0)
 
 ### 개요
-10개의 AI 모델을 통합한 메타 앙상블 시스템입니다.
+12개의 AI 모델을 통합한 메타 앙상블 시스템입니다. v3.0에서 조합 분석/필터링, 조건부 확률 샘플링, 휠링 시스템, Walk-Forward 검증, 스태킹 앙상블이 추가되었습니다.
 
 ### 모델 아키텍처
 ```
-                    ┌─────────────────────────────────────┐
-                    │      UltimateEnsembleModel          │
-                    │   (최종 메타 앙상블 - 확률 통합)     │
-                    └──────────────────┬──────────────────┘
-                                       │
-           ┌───────────────────────────┼───────────────────────────┐
-           │                           │                           │
-    ┌──────▼──────┐            ┌───────▼───────┐           ┌───────▼───────┐
-    │  Tier 1     │            │   Tier 2      │           │   Tier 3      │
-    │ 기존 모델   │            │  딥러닝/그래프 │           │  메타 전략    │
-    └──────┬──────┘            └───────┬───────┘           └───────┬───────┘
-           │                           │                           │
-    ┌──────┴──────┐            ┌───────┴───────┐           ┌───────┴───────┐
-    │ StatsModel  │            │  LSTMModel    │           │ PatternModel  │
-    │ BayesModel  │            │ TransformerM  │           │ MonteCarloM   │
-    │ GNNModel    │            │ PageRankModel │           └───────────────┘
-    └─────────────┘            │ CommunityM    │
-                               │ MarkovModel   │
-                               └───────────────┘
+    ┌────────────────────────────────────────────────────────┐
+    │                UltimateEnsembleModel                    │
+    │    (메타 앙상블 + CombinationScorer + CombinationFilter)│
+    └──────────────────────────┬─────────────────────────────┘
+                               │
+         ┌─────────────────────┼─────────────────────┐
+         │                     │                     │
+  ┌──────▼──────┐      ┌──────▼──────┐      ┌───────▼───────┐
+  │  Tier 1     │      │  Tier 2     │      │   Tier 3      │
+  │ 기존 모델   │      │ 딥러닝/그래프│      │  메타 전략    │
+  └──────┬──────┘      └──────┬──────┘      └───────┬───────┘
+         │                    │                     │
+  ┌──────┴──────┐     ┌──────┴──────┐       ┌──────┴───────┐
+  │ StatsModel  │     │ LSTMModel   │       │ PatternModel │
+  │ BayesModel  │     │ Transformer │       │ MonteCarloM  │
+  │ GNNModel    │     │ DeepSetsM   │       └──────────────┘
+  └─────────────┘     │ PageRankM   │
+                      │ CommunityM  │
+                      │ MarkovModel │
+                      └─────────────┘
+
+    ┌────────────────────────────────────────────────────────┐
+    │             StackingEnsembleModel                       │
+    │    (Ridge 메타 모델 + 시간적 분할 교차검증)              │
+    │    서브 모델: Stats, Bayes, PageRank, Community,        │
+    │              Markov, Pattern, MonteCarlo                │
+    └────────────────────────────────────────────────────────┘
 ```
 
-### 신규 모델 파일
+### 모델 파일
 | 모델 | 파일 | 알고리즘 |
 |------|------|----------|
-| LSTM | [lstm_model.py](models/lstm_model.py) | 시계열 딥러닝 |
-| Transformer | [transformer_model.py](models/transformer_model.py) | Self-Attention |
+| Stats | [stats_model.py](models/stats_model.py) | Z-score + softmax 빈도 분석 |
+| Bayes | [bayes_model.py](models/bayes_model.py) | Beta-Binomial 베이즈 추론 |
+| GNN | [gnn_model.py](models/gnn_model.py) | GCN 동시출현 그래프 |
+| LSTM | [lstm_model.py](models/lstm_model.py) | 시계열 딥러닝 (BCEWithLogitsLoss) |
+| Transformer | [transformer_model.py](models/transformer_model.py) | Self-Attention (BCEWithLogitsLoss) |
+| DeepSets | [deepsets_model.py](models/deepsets_model.py) | 순서 불변 집합 인코딩 + GRU |
 | PageRank | [pagerank_model.py](models/pagerank_model.py) | 그래프 중심성 |
-| Community | [community_model.py](models/community_model.py) | 클러스터 탐지 |
+| Community | [community_model.py](models/community_model.py) | Louvain 클러스터 탐지 |
 | Markov | [markov_model.py](models/markov_model.py) | 전이 확률 |
-| Pattern | [pattern_model.py](models/pattern_model.py) | 패턴 분석 |
+| Pattern | [pattern_model.py](models/pattern_model.py) | 주기성/간격/패턴 분석 |
 | MonteCarlo | [montecarlo_model.py](models/montecarlo_model.py) | 시뮬레이션 |
-| Ultimate | [ultimate_ensemble_model.py](models/ultimate_ensemble_model.py) | 메타 앙상블 |
+| Ultimate | [ultimate_ensemble_model.py](models/ultimate_ensemble_model.py) | 메타 앙상블 + 조합 최적화 |
+| Stacking | [stacking_ensemble_model.py](models/stacking_ensemble_model.py) | Ridge 메타 모델 스태킹 |
+
+### 유틸리티 파일
+| 유틸리티 | 파일 | 기능 |
+|----------|------|------|
+| 조합 분석 | [analysis.py](utils/analysis.py) | AC값, 끝수, 합계, 홀짝, 번호대, 종합 점수, 조합 필터 |
+| 조합 스코어러 | [combination_scorer.py](utils/combination_scorer.py) | 동시출현 상관관계, 조건부 확률 샘플링 |
+| 시간적 검증 | [validation.py](utils/validation.py) | Walk-Forward 검증, 과적합 탐지 |
+| 휠링 | [wheeling.py](utils/wheeling.py) | 수학적 커버리지 보장 축약 휠 |
+| 메타 학습 | [meta_learner.py](utils/meta_learner.py) | BMA, softmax 가중치, 캐시 |
 
 ### 핵심 기술
 1. **확률 분포 기반 통합**: 모든 모델이 45차원 확률 벡터 반환
 2. **동적 가중치**: 과거 성능 기반 자동 조정 (지수 감쇠)
 3. **다양성 보장**: 모델 간 상관관계 페널티
+4. **조합 필터링**: AC값, 합계, 연번, 홀짝, 끝수, 번호대 기반 비현실적 조합 제거
+5. **조건부 확률 샘플링**: 번호 간 동시출현 상관관계를 반영한 번호 선택
+6. **휠링 시스템**: 후보 번호에서 수학적 매치 보장 (3/4/5-매치)
+7. **Walk-Forward 검증**: 시간순 분할로 과적합 탐지
+8. **스태킹 앙상블**: Ridge 메타 모델로 서브 모델 확률 분포 학습
 
 ### 사용 방법
 ```python
 from models.ultimate_ensemble_model import UltimateEnsembleModel
+from models.stacking_ensemble_model import StackingEnsembleModel
 
+# Ultimate Ensemble
 model = UltimateEnsembleModel()
 model.train(df)
 prediction = model.predict()  # 6개 번호
 multi = model.predict_multiple(5)  # 5세트
 top_nums = model.get_top_numbers(10)  # 상위 10개
+
+# Stacking Ensemble
+stacking = StackingEnsembleModel(meta_model_type='ridge')
+stacking.train(df)
+prediction = stacking.predict()
 ```
 
 ## 라이선스 및 면책
