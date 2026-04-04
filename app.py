@@ -221,26 +221,53 @@ st.caption(f"ℹ️ {alg_descriptions.get(selected_alg_enum, '')}")
 st.markdown("---")
 col1, col2, col3 = st.columns([1, 2, 1])
 
+with col1:
+    n_games = st.number_input("🎮 생성할 게임 수 (Number of Games)", min_value=1, max_value=10, value=1)
+
 with col2:
     generate_clicked = st.button("🚀 예측 번호 생성", type="primary", use_container_width=True)
 
 if generate_clicked:
-    with st.spinner("🧠 모델 학습 및 예측 중... (Thinking...)"):
-        try:
-            model = create_model(selected_alg_enum, weights)
+    try:
+        model = create_model(selected_alg_enum, weights)
 
-            if model is None:
-                st.error("알 수 없는 알고리즘입니다.")
+        if model is None:
+            st.error("알 수 없는 알고리즘입니다.")
+        else:
+            # Progress bar 및 상태 텍스트
+            progress_bar = st.progress(0, text="🧠 모델 학습 중... (Training...)")
+
+            # Train model
+            model.train(df)
+            progress_bar.progress(0.3, text="🧠 모델 학습 완료. 예측 생성 중...")
+
+            # 예측 생성
+            next_draw_no = int(df['drwNo'].max()) + 1
+
+            if n_games > 1 and hasattr(model, 'predict_multiple'):
+                # predict_multiple 지원 모델 (Ultimate, Stacking)
+                progress_bar.progress(0.5, text="🎯 예측 생성 중...")
+                predictions = model.predict_multiple(n_games)
+                progress_bar.progress(1.0, text=f"🎯 {n_games}개 게임 생성 완료!")
             else:
-                # Train and predict
-                model.train(df)
-                prediction = model.predict()
+                predictions = []
+                for i in range(n_games):
+                    predictions.append(model.predict())
+                    progress = 0.3 + 0.7 * (i + 1) / n_games
+                    progress_bar.progress(progress, text=f"🎯 게임 {i + 1}/{n_games} 생성 완료")
 
+            progress_bar.empty()
+
+            game_suffix = f" ({n_games}게임)" if n_games > 1 else ""
+            st.success(f"✨ 예측된 번호 (Predicted Numbers) - {selected_alg_name}{game_suffix}:")
+
+            # 각 게임별 결과 표시
+            for game_idx, prediction in enumerate(predictions):
                 # Save prediction
-                next_draw_no = int(df['drwNo'].max()) + 1
                 history_manager.save_prediction(next_draw_no, selected_alg_enum, prediction)
 
-                st.success(f"✨ 예측된 번호 (Predicted Numbers) - {selected_alg_name}:")
+                if n_games > 1:
+                    st.markdown(f"#### 🎮 Game {game_idx + 1}")
 
                 # Display nicely with colored balls
                 cols = st.columns(6)
@@ -278,12 +305,7 @@ if generate_clicked:
                             unsafe_allow_html=True
                         )
 
-                st.balloons()
-
                 # 조합 분석 표시
-                st.markdown("---")
-                st.subheader("📐 조합 분석 (Combination Analysis)")
-
                 ac = analyzer.ac_value(prediction)
                 s = analyzer.sum_value(prediction)
                 odd, even = analyzer.odd_even_ratio(prediction)
@@ -293,84 +315,87 @@ if generate_clicked:
                 decades = analyzer.decade_distribution(prediction)
                 score = analyzer.comprehensive_score(prediction, df)
 
-                a1, a2, a3, a4 = st.columns(4)
-                with a1:
-                    st.metric("AC값", ac, help="7-10이 이상적 (역대 당첨번호 기준)")
-                with a2:
-                    st.metric("합계", s, help="100-170이 이상적 (역대 평균 ~135)")
-                with a3:
-                    st.metric("홀:짝", f"{odd}:{even}", help="2:4~4:2가 이상적")
-                with a4:
-                    st.metric("종합 점수", f"{score:.0f}", help="높을수록 역대 패턴에 부합")
+                with st.expander(f"📐 조합 분석 (Game {game_idx + 1})" if n_games > 1 else "📐 조합 분석 (Combination Analysis)", expanded=(n_games == 1)):
+                    a1, a2, a3, a4 = st.columns(4)
+                    with a1:
+                        st.metric("AC값", ac, help="7-10이 이상적 (역대 당첨번호 기준)")
+                    with a2:
+                        st.metric("합계", s, help="100-170이 이상적 (역대 평균 ~135)")
+                    with a3:
+                        st.metric("홀:짝", f"{odd}:{even}", help="2:4~4:2가 이상적")
+                    with a4:
+                        st.metric("종합 점수", f"{score:.0f}", help="높을수록 역대 패턴에 부합")
 
-                a5, a6, a7 = st.columns(3)
-                with a5:
-                    st.metric("저:고", f"{low}:{high}", help="1-22:23-45 비율")
-                with a6:
-                    st.metric("연번 쌍", consec, help="0-2가 이상적")
-                with a7:
-                    decade_str = " / ".join(f"{k}:{v}" for k, v in decades.items() if v > 0)
-                    st.metric("번호대", decade_str)
+                    a5, a6, a7 = st.columns(3)
+                    with a5:
+                        st.metric("저:고", f"{low}:{high}", help="1-22:23-45 비율")
+                    with a6:
+                        st.metric("연번 쌍", consec, help="0-2가 이상적")
+                    with a7:
+                        decade_str = " / ".join(f"{k}:{v}" for k, v in decades.items() if v > 0)
+                        st.metric("번호대", decade_str)
 
-                # Show top numbers for Ultimate/Stacking model
-                has_top = hasattr(model, 'get_top_numbers')
-                if has_top and selected_alg_enum in [AlgorithmType.ULTIMATE, AlgorithmType.STACKING]:
-                    st.markdown("---")
-                    st.subheader("📊 상위 확률 번호 (Top 10)")
-                    top_nums = model.get_top_numbers(10)
+            st.balloons()
 
-                    top_df = pd.DataFrame(top_nums, columns=["번호", "확률"])
-                    top_df["확률"] = top_df["확률"].apply(lambda x: f"{x*100:.2f}%")
+            # Show top numbers for Ultimate/Stacking model
+            has_top = hasattr(model, 'get_top_numbers')
+            if has_top and selected_alg_enum in [AlgorithmType.ULTIMATE, AlgorithmType.STACKING]:
+                st.markdown("---")
+                st.subheader("📊 상위 확률 번호 (Top 10)")
+                top_nums = model.get_top_numbers(10)
 
-                    col1, col2 = st.columns([1, 2])
-                    with col1:
-                        st.dataframe(top_df, hide_index=True)
+                top_df = pd.DataFrame(top_nums, columns=["번호", "확률"])
+                top_df["확률"] = top_df["확률"].apply(lambda x: f"{x*100:.2f}%")
 
-                # 휠링 시스템 (Ultimate/Stacking 모델에서 사용 가능)
-                if has_top and selected_alg_enum in [AlgorithmType.ULTIMATE, AlgorithmType.STACKING]:
-                    st.markdown("---")
-                    st.subheader("🎡 휠링 시스템 (Wheeling System)")
-                    st.caption("상위 번호에서 수학적 커버리지를 보장하는 조합 세트를 생성합니다.")
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    st.dataframe(top_df, hide_index=True)
 
-                    w1, w2 = st.columns(2)
-                    with w1:
-                        n_candidates = st.slider("후보 번호 수", 8, 15, 10,
-                                                 help="상위 N개 번호를 후보로 선정")
-                    with w2:
-                        guarantee = st.selectbox("보장 등급",
-                                                 [3, 4, 5],
-                                                 format_func=lambda x: {3: "5등 보장 (3개 적중)", 4: "4등 보장 (4개 적중)", 5: "3등 보장 (5개 적중)"}[x])
+            # 휠링 시스템 (Ultimate/Stacking 모델에서 사용 가능)
+            if has_top and selected_alg_enum in [AlgorithmType.ULTIMATE, AlgorithmType.STACKING]:
+                st.markdown("---")
+                st.subheader("🎡 휠링 시스템 (Wheeling System)")
+                st.caption("상위 번호에서 수학적 커버리지를 보장하는 조합 세트를 생성합니다.")
 
-                    if st.button("🎡 휠 생성", key="wheel_btn"):
-                        top_numbers = [t[0] for t in model.get_top_numbers(n_candidates)]
+                w1, w2 = st.columns(2)
+                with w1:
+                    n_candidates = st.slider("후보 번호 수", 8, 15, 10,
+                                             help="상위 N개 번호를 후보로 선정")
+                with w2:
+                    guarantee = st.selectbox("보장 등급",
+                                             [3, 4, 5],
+                                             format_func=lambda x: {3: "5등 보장 (3개 적중)", 4: "4등 보장 (4개 적중)", 5: "3등 보장 (5개 적중)"}[x])
 
-                        try:
-                            ws = WheelingSystem(top_numbers, guarantee_match=guarantee)
-                            wheel = ws.generate_abbreviated_wheel()
-                            report = ws.get_coverage_report(wheel)
+                if st.button("🎡 휠 생성", key="wheel_btn"):
+                    top_numbers = [t[0] for t in model.get_top_numbers(n_candidates)]
 
-                            st.success(f"✅ {report['총_티켓_수']}장의 티켓 생성 (완전 휠 대비 {report['절감_비율']} 절감)")
-                            st.markdown(f"**후보 번호**: {report['후보_번호']}")
-                            st.markdown(f"**보장**: {report['보장_등수']} ({report['커버리지']} 커버리지)")
+                    try:
+                        ws = WheelingSystem(top_numbers, guarantee_match=guarantee)
+                        wheel = ws.generate_abbreviated_wheel()
+                        report = ws.get_coverage_report(wheel)
 
-                            # 티켓 목록 표시
-                            ticket_data = []
-                            for idx, ticket in enumerate(wheel):
-                                ticket_data.append({
-                                    "티켓 #": idx + 1,
-                                    "번호": ", ".join(map(str, ticket)),
-                                    "합계": sum(ticket),
-                                    "AC값": analyzer.ac_value(ticket)
-                                })
-                            st.dataframe(pd.DataFrame(ticket_data), hide_index=True, use_container_width=True)
-                        except Exception as e:
-                            st.error(f"휠링 오류: {e}")
+                        st.success(f"✅ {report['총_티켓_수']}장의 티켓 생성 (완전 휠 대비 {report['절감_비율']} 절감)")
+                        st.markdown(f"**후보 번호**: {report['후보_번호']}")
+                        st.markdown(f"**보장**: {report['보장_등수']} ({report['커버리지']} 커버리지)")
 
-        except Exception as e:
-            st.error(f"오류가 발생했습니다: {e}")
-            import traceback
-            with st.expander("상세 오류 정보"):
-                st.text(traceback.format_exc())
+                        # 티켓 목록 표시
+                        ticket_data = []
+                        for idx, ticket in enumerate(wheel):
+                            ticket_data.append({
+                                "티켓 #": idx + 1,
+                                "번호": ", ".join(map(str, ticket)),
+                                "합계": sum(ticket),
+                                "AC값": analyzer.ac_value(ticket)
+                            })
+                        st.dataframe(pd.DataFrame(ticket_data), hide_index=True, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"휠링 오류: {e}")
+
+    except Exception as e:
+        st.error(f"오류가 발생했습니다: {e}")
+        import traceback
+        with st.expander("상세 오류 정보"):
+            st.text(traceback.format_exc())
 
 # Latest winning numbers
 st.markdown("---")
