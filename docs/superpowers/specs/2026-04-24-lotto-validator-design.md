@@ -6,31 +6,37 @@
 
 ## 1. 목표
 
-최근 2년(약 104회차) 구간을 Walk-Forward 백테스트로 14개 알고리즘 성능을 정량 평가하고, 알고리즘별 약점을 진단해 적중률 향상 대책을 제시하는 검증 서브에이전트를 구축한다.
+최근 2년(약 104회차) 구간을 Walk-Forward 백테스트로 **Ultimate Ensemble, Stacking Ensemble 두 메타 앙상블** 성능을 정량 평가하고, 약점을 진단해 적중률 향상 대책을 제시하는 검증 서브에이전트를 구축한다.
 
 ## 2. 범위
 
 ### 2.1 In Scope
-- 14개 모든 알고리즘 평가: Stats, GNN, Bayes, LSTM, Transformer, DeepSets, PageRank, Community, Markov, Pattern, MonteCarlo, Weighted Ensemble, Ultimate Ensemble, Stacking Ensemble
-- 하이브리드 재학습 전략 (모델별 차등)
+- 2개 메타 앙상블 평가: **Ultimate Ensemble**, **Stacking Ensemble**
+- 두 앙상블 모두 chunk_10 재학습 전략 (10회차마다 재학습)
 - B 메트릭 (예측 기반) + C 메트릭 (확률분포 기반) 병행
+- Ultimate vs Stacking 상대 비교 (헤드투헤드)
 - 결과를 `validation_results/<timestamp>/` 디렉토리에 저장
 - Claude Code 서브에이전트가 보고서를 해석하여 적중률 향상 대책 제시
 
 ### 2.2 Out of Scope
+- Ultimate/Stacking 내부 11개 서브모델의 개별 백테스트 (필요 시 후속 작업)
 - 제안된 대책의 실제 구현 (별도 작업으로 처리)
 - Streamlit UI 통합 (초기 릴리스 이후 고려)
 - 실시간 예측 (본 에이전트는 과거 데이터 평가 전용)
+
+### 2.3 서브모델 간접 진단
+Ultimate Ensemble은 내부에 Stats/Bayes/GNN/LSTM/Transformer/DeepSets/PageRank/Community/Markov/Pattern/MonteCarlo 11개를 통합한다. 두 앙상블의 확률 분포를 분석하면 내부 가중치 시스템(`get_advanced_weights()`)의 작동 품질을 간접적으로 진단할 수 있다. 이는 향후 서브모델 개별 백테스트를 트리거할지 판단하는 1차 필터 역할을 한다.
 
 ## 3. 주요 결정 사항 (브레인스토밍 결과)
 
 | 결정 항목 | 선택 | 근거 |
 |-----------|------|------|
+| 평가 대상 | Ultimate Ensemble, Stacking Ensemble (2개) | 두 메타 앙상블이 현재 서비스의 최종 출력 |
 | 평가 범위 | 최근 2년 / 약 104회차 / Walk-Forward | 통계적 의미 확보와 실행 시간 균형 |
 | 메트릭 수준 | B (예측 기반) + C (확률분포 기반) 병행 | "왜 못 맞추는가"를 진단해야 대책 수립 가능 |
 | Agent 형태 | Python 스크립트 + Claude 서브에이전트 조합 | 연산 로직 분리 + 해석/대책 생성 LLM 활용 |
-| 재학습 전략 | 모델별 차등 (per_draw / chunk_10) | 공정성과 실행 시간의 균형 |
-| 확률적 모델 | 회차당 K=5회 예측 평균 + 확률분포 직접 평가 | 분산 제어와 대책 근거 확보 |
+| 재학습 전략 | 두 앙상블 모두 chunk_10 (10회차마다 재학습) | 앙상블은 내부 서브모델 학습 비용이 커서 매회차 재학습은 비현실적 |
+| 확률적 요소 | 회차당 K=5회 예측 평균 + 확률분포 직접 평가 | 내부 샘플링 분산 제어 |
 | 결과 저장 | CSV + JSON + Markdown + PNG 차트 + 타임스탬프 디렉토리 | 재현성, 비교 가능성, 사람·기계 모두 읽기 |
 | 대책 생성 방식 | 체크리스트 기반 1차 진단 + LLM 자유 해석 하이브리드 | 일관성 + 통찰력 |
 
@@ -58,7 +64,7 @@
 │  │  run_validation.py         # 엔트리포인트        │  │
 │  │  backtest_engine.py        # Walk-Forward 엔진   │  │
 │  │  metrics.py                # B+C 메트릭 계산     │  │
-│  │  model_registry.py         # 14모델 + 재학습 전략│  │
+│  │  model_registry.py         # 2개 앙상블 + 전략   │  │
 │  │  report_generator.py       # Markdown + PNG     │  │
 │  │  config.py                 # 시드, 기간, K값      │  │
 │  └──────────────────────────────────────────────────┘  │
@@ -85,24 +91,8 @@ RANDOM_SEED = 42                 # numpy, torch, random 통일
 PREDICTIONS_PER_DRAW = 5         # 확률적 모델의 회차당 예측 반복 K
 REPORT_TTL_HOURS = 24            # 재사용 가능한 결과의 신선도
 
-# 모델별 재학습 전략
+# 평가 대상 앙상블 및 재학습 전략
 MODEL_STRATEGIES = {
-    # 가벼운 모델: 매 회차 재학습
-    "StatsModel": "per_draw",
-    "BayesModel": "per_draw",
-    "MarkovModel": "per_draw",
-    "PatternModel": "per_draw",
-    "PageRankModel": "per_draw",
-    "CommunityModel": "per_draw",
-    "MonteCarloModel": "per_draw",
-    # 중간 비용: 10회차마다 재학습
-    "GNNModel": "chunk_10",
-    "WeightedEnsembleModel": "chunk_10",
-    # 무거운 모델: 10회차마다 재학습
-    "LSTMModel": "chunk_10",
-    "TransformerModel": "chunk_10",
-    "DeepSetsModel": "chunk_10",
-    # 메타 앙상블: 10회차마다 재학습
     "UltimateEnsembleModel": "chunk_10",
     "StackingEnsembleModel": "chunk_10",
 }
@@ -148,13 +138,13 @@ class BacktestEngine:
 
 ### 5.4 `validator/model_registry.py`
 
-14개 모델의 메타데이터:
-- 클래스 참조
-- 기본 생성자 인자
-- 재학습 전략 (`MODEL_STRATEGIES`에서 조회)
-- `get_probability_distribution()` 오버라이드 여부
+2개 메타 앙상블의 메타데이터:
+- 클래스 참조 (`UltimateEnsembleModel`, `StackingEnsembleModel`)
+- 기본 생성자 인자 (Stacking의 `meta_model_type='ridge'` 등)
+- 재학습 전략 (`chunk_10`)
+- `get_probability_distribution()` 오버라이드 여부 사전 점검
 
-미구현 모델은 런타임에 감지하여 C 메트릭을 NaN으로 표시하고 보고서에 경고 명시.
+두 앙상블 모두 `get_probability_distribution()`을 반드시 구현해야 C 메트릭이 의미 있음. 미구현 시 런타임 경고 후 B 메트릭만 진행.
 
 ### 5.5 `validator/report_generator.py`
 
@@ -179,8 +169,8 @@ class BacktestEngine:
   3. 캘리브레이션 품질 (예측 확률과 실제 적중률 일치도)
   4. 번호대 편향 (특정 구간 과집중)
   5. 다양성 결핍 (회차 간 동일 번호 반복)
-  6. 앙상블 기여도 (Ultimate/Stacking이 서브모델보다 실제로 나은가)
-  7. 가중치 시스템 점검 (`get_advanced_weights()`가 실제 성능 반영 여부)
+  6. **Ultimate vs Stacking 상대 평가** (어느 앙상블이 우세한가, 어떤 상황/회차에서 갈리는가, 두 앙상블의 예측 상관관계)
+  7. **가중치 시스템 점검** (Ultimate의 `get_advanced_weights()`가 실제 내부 서브모델 성능을 반영하는지, 가중치가 예측 다양성에 기여하는지)
 - 출력 포맷 명세: Top-5 대책을 "영향도 × 구현 비용" 매트릭스로 정렬
 
 ## 6. 데이터 흐름
@@ -208,21 +198,23 @@ class BacktestEngine:
 ## 8. 테스트 전략
 
 - `tests/test_metrics.py`: B+C 메트릭을 수동 케이스 (알려진 예측·당첨 조합) 로 검증
-- `tests/test_backtest_smoke.py`: Stats 모델 5회차 짧은 스모크 테스트 (<30초)
-- `tests/test_model_registry.py`: 14개 모델 모두 인스턴스화 가능한지
-- `tests/test_config.py`: 시드 고정으로 2회 연속 실행 시 결정적 모델은 완전 동일 결과 확인
+- `tests/test_backtest_smoke.py`: Ultimate 또는 Stacking 중 하나로 3회차 짧은 스모크 테스트 (<2분)
+- `tests/test_model_registry.py`: 2개 앙상블 인스턴스화 가능 + `get_probability_distribution()` 구현 확인
+- `tests/test_config.py`: 시드 고정으로 2회 연속 실행 시 결과 재현성 확인
 - 서브에이전트 동작 검증: 첫 실행 시 수동 검수
 
 ## 9. 성공 기준
 
-1. `python -m validator.run_validation` 한 줄 실행으로 30–70분 내 완료
-2. 동일 시드로 2번 돌리면 결정적 모델은 완전 동일, 확률적 모델도 재현 가능
+1. `python -m validator.run_validation` 한 줄 실행으로 15–25분 내 완료
+2. 동일 시드로 2번 돌리면 결과가 재현됨 (앙상블 내부 확률적 요소 포함)
 3. 서브에이전트가 이 채팅창에 구체적·실행 가능한 대책 최소 3개 제시 (막연한 "더 좋은 모델 사용" 금지)
-4. 각 대책에 근거 메트릭 수치 인용 (예: "LSTM 과적합 갭 0.42 → dropout 0.2→0.3으로 상향")
+4. 각 대책에 근거 메트릭 수치 인용 (예: "Ultimate의 가중치 상위 3개 서브모델 기여도가 캘리브레이션과 역상관 → 가중치 공식 재설계")
+5. Ultimate vs Stacking 헤드투헤드 결과가 명시됨 (어느 쪽이 몇 % 우세한지)
 
 ## 10. 향후 확장 (본 설계 밖)
 
+- 11개 서브모델(Stats, GNN, Bayes, LSTM, Transformer, DeepSets, PageRank, Community, Markov, Pattern, MonteCarlo) 개별 백테스트
 - Streamlit "검증/벤치마크" 탭 추가
 - 대책의 자동 적용 (예: 가중치 시스템 자동 튜닝)
-- 모델 간 예측 상관관계 분석 (앙상블 다양성 측정)
+- 앙상블 내부 서브모델 간 예측 상관관계 분석 (다양성 측정)
 - 실제 배팅 시뮬레이션 (등수별 상금 기대값)
