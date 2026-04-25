@@ -784,9 +784,10 @@ class BacktestEngine:
         self.config = config
 
     def _eval_range(self) -> range:
-        """평가할 회차의 인덱스 범위."""
+        """평가할 회차의 인덱스 범위. 학습 데이터가 부족하면 자동으로 축소된다."""
         total = len(self.df)
-        window = min(self.config.eval_window_draws, total - self.MIN_TRAIN_DRAWS)
+        min_train = min(self.MIN_TRAIN_DRAWS, max(1, total // 2))
+        window = min(self.config.eval_window_draws, total - min_train)
         window = max(0, window)
         start = total - window
         return range(start, total)
