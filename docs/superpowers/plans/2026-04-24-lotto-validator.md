@@ -423,7 +423,7 @@ Expected: 5 tests failed/errored with ImportError or AttributeError.
 
 - [ ] **Step 3: CMetrics 및 compute_c_metrics 구현**
 
-`validator/metrics.py` 하단에 추가:
+`validator/metrics.py` 하단에 추가 (모듈 상단 import에 `from scipy.stats import rankdata` 추가):
 ```python
 @dataclass
 class CMetrics:
@@ -468,9 +468,9 @@ def compute_c_metrics(
         actual_idx = [n - 1 for n in actual]
         top6_sums.append(float(probs[actual_idx].sum()))
 
-        order = np.argsort(-probs)
-        rank_of = {int(idx): rank + 1 for rank, idx in enumerate(order)}
-        ranks = [rank_of[i] for i in actual_idx]
+        # 동순위는 평균 랭크로 처리 (균등분포에서 mean_rank ≈ 23이 되도록)
+        all_ranks = rankdata(-probs, method="average")
+        ranks = [float(all_ranks[i]) for i in actual_idx]
         ranks_collected.extend(ranks)
         top10_hit_counts.append(float(sum(1 for r in ranks if r <= 10)))
 
