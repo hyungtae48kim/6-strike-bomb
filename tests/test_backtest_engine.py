@@ -109,3 +109,34 @@ def test_run_all_returns_dict_keyed_by_model_name(sample_lotto_df, stub_spec):
     results = engine.run_all([stub_spec])
     assert set(results.keys()) == {"Stub"}
     assert isinstance(results["Stub"], ModelBacktestResult)
+
+
+from pathlib import Path
+
+from validator.backtest_engine import save_checkpoint, load_checkpoint
+
+
+def test_save_and_load_checkpoint_roundtrip(tmp_path, sample_lotto_df, stub_spec):
+    cfg = ValidatorConfig(
+        eval_window_draws=10, predictions_per_draw=1, retrain_chunk_size=5
+    )
+    engine = BacktestEngine(sample_lotto_df, cfg)
+    results = engine.run_all([stub_spec])
+
+    ckpt = tmp_path / "checkpoint.json"
+    save_checkpoint(results, ckpt)
+    assert ckpt.exists()
+
+    loaded = load_checkpoint(ckpt)
+    assert set(loaded.keys()) == set(results.keys())
+    assert loaded["Stub"].model_name == "Stub"
+    assert len(loaded["Stub"].draw_results) == len(results["Stub"].draw_results)
+    dr_a = results["Stub"].draw_results[0]
+    dr_b = loaded["Stub"].draw_results[0]
+    assert dr_a.draw_no == dr_b.draw_no
+    assert dr_a.actual == dr_b.actual
+    assert np.allclose(dr_a.probability, dr_b.probability)
+
+
+def test_load_checkpoint_missing_returns_none(tmp_path):
+    assert load_checkpoint(tmp_path / "does-not-exist.json") is None

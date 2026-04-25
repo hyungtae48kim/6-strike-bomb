@@ -1,8 +1,10 @@
 """Walk-Forward 백테스트 엔진."""
 import contextlib
 import io
+import json
 from dataclasses import dataclass, field
-from typing import Dict, List
+from pathlib import Path
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -97,3 +99,54 @@ class BacktestEngine:
     def run_all(self, specs: List[ModelSpec]) -> Dict[str, ModelBacktestResult]:
         """여러 모델을 순차적으로 백테스트한다."""
         return {spec.name: self.run_model(spec) for spec in specs}
+
+
+def save_checkpoint(
+    results: Dict[str, ModelBacktestResult],
+    path,
+) -> None:
+    """백테스트 결과를 JSON으로 저장한다. (보안상 JSON만 사용)"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    serializable = {}
+    for model_name, result in results.items():
+        serializable[model_name] = {
+            "model_name": result.model_name,
+            "draw_results": [
+                {
+                    "draw_no": dr.draw_no,
+                    "predictions": [list(p) for p in dr.predictions],
+                    "probability": dr.probability.tolist(),
+                    "actual": list(dr.actual),
+                }
+                for dr in result.draw_results
+            ],
+        }
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(serializable, f, ensure_ascii=False)
+
+
+def load_checkpoint(path) -> Optional[Dict[str, ModelBacktestResult]]:
+    """체크포인트가 있으면 JSON에서 로드, 없으면 None."""
+    path = Path(path)
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    results: Dict[str, ModelBacktestResult] = {}
+    for model_name, payload in data.items():
+        draw_results = [
+            DrawResult(
+                draw_no=int(dr["draw_no"]),
+                predictions=[list(p) for p in dr["predictions"]],
+                probability=np.array(dr["probability"], dtype=float),
+                actual=list(dr["actual"]),
+            )
+            for dr in payload["draw_results"]
+        ]
+        results[model_name] = ModelBacktestResult(
+            model_name=payload["model_name"],
+            draw_results=draw_results,
+        )
+    return results
