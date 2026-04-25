@@ -5,6 +5,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Dict
 
+import matplotlib
+matplotlib.use("Agg")  # 헤드리스 환경 대비
+import matplotlib.pyplot as plt
+
 from validator.backtest_engine import ModelBacktestResult
 from validator.config import ValidatorConfig
 from validator.metrics import BMetrics, CMetrics
@@ -122,3 +126,64 @@ def write_report_md(
         lines.append("")
 
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_charts(
+    results: Dict[str, ModelBacktestResult],
+    metrics: Dict[str, Dict[str, object]],
+    chart_dir,
+) -> None:
+    """3개 핵심 차트 PNG 저장."""
+    chart_dir = Path(chart_dir)
+    chart_dir.mkdir(parents=True, exist_ok=True)
+
+    names = list(metrics.keys())
+    colors = ["#4c72b0", "#dd8452", "#55a868", "#c44e52"]
+
+    # 1) 평균 적중 막대그래프
+    fig, ax = plt.subplots(figsize=(6, 4))
+    avgs = [metrics[n]["b"].mean_hits for n in names]
+    ax.bar(names, avgs, color=colors[:len(names)])
+    ax.axhline(0.8, color="gray", linestyle="--", label="baseline=0.8")
+    ax.set_ylabel("평균 적중 수")
+    ax.set_title("모델별 평균 적중 수")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(chart_dir / "avg_hits_bar.png", dpi=120)
+    plt.close(fig)
+
+    # 2) 적중 개수 분포
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for name in names:
+        dist = metrics[name]["b"].hit_distribution
+        xs = sorted(dist.keys())
+        ys = [dist[k] for k in xs]
+        ax.plot(xs, ys, marker="o", label=name)
+    ax.set_xlabel("적중 개수")
+    ax.set_ylabel("빈도")
+    ax.set_title("적중 개수 분포")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(chart_dir / "hit_distribution.png", dpi=120)
+    plt.close(fig)
+
+    # 3) 번호대 편향
+    zones = list(metrics[names[0]]["c"].zone_predicted_mass.keys())
+    x = list(range(len(zones)))
+    width = 0.35
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for i, name in enumerate(names):
+        pred = [metrics[name]["c"].zone_predicted_mass[z] for z in zones]
+        offset = (i - (len(names) - 1) / 2) * width
+        positions = [p + offset for p in x]
+        ax.bar(positions, pred, width, label=f"{name} (예측)", color=colors[i])
+    actual = [metrics[names[0]]["c"].zone_actual_rate[z] for z in zones]
+    ax.plot(x, actual, color="black", marker="x", label="실제 당첨 비율")
+    ax.set_xticks(x)
+    ax.set_xticklabels(zones)
+    ax.set_ylabel("질량 / 비율")
+    ax.set_title("번호대별 예측 질량 vs 실제 당첨 비율")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(chart_dir / "zone_bias.png", dpi=120)
+    plt.close(fig)

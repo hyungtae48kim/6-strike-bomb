@@ -90,3 +90,27 @@ def test_markdown_report_includes_both_models_and_metrics(tmp_path):
     assert "평균 적중" in text
     assert "top6" in text.lower()
     assert "0.8" in text  # baseline 언급
+
+
+from validator.report_generator import write_charts
+
+
+def test_write_charts_creates_three_png_files(tmp_path):
+    results = {"Ultimate Ensemble": _fake_result("Ultimate Ensemble")}
+    metrics = {}
+    for name, result in results.items():
+        b = compute_b_metrics(
+            [[dr.predictions[0]] for dr in result.draw_results],
+            [dr.actual for dr in result.draw_results],
+        )
+        c = compute_c_metrics(
+            [dr.probability for dr in result.draw_results],
+            [dr.actual for dr in result.draw_results],
+        )
+        metrics[name] = {"b": b, "c": c}
+
+    chart_dir = tmp_path / "charts"
+    write_charts(results, metrics, chart_dir)
+    assert (chart_dir / "avg_hits_bar.png").exists()
+    assert (chart_dir / "hit_distribution.png").exists()
+    assert (chart_dir / "zone_bias.png").exists()
