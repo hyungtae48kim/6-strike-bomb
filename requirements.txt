@@ -8,3 +8,5 @@ numpy
 scikit-learn
 scipy
 python-louvain
+matplotlib
+pytest
