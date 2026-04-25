@@ -62,3 +62,63 @@ def write_metrics_summary_json(
     }
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
+
+
+def write_report_md(
+    metrics: Dict[str, Dict[str, object]],
+    config: ValidatorConfig,
+    path,
+) -> None:
+    """사람이 읽을 Markdown 보고서 작성."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = []
+    lines.append("# Lotto Validator Report")
+    lines.append("")
+    lines.append(f"- 평가 창 (회차 수): {config.eval_window_draws}")
+    lines.append(f"- 회차당 예측 반복 (K): {config.predictions_per_draw}")
+    lines.append(f"- 재학습 전략: chunk_{config.retrain_chunk_size}")
+    lines.append(f"- 난수 시드: {config.random_seed}")
+    lines.append(f"- 무작위 기댓값 (baseline): 0.8 hits")
+    lines.append("")
+    lines.append("## 모델별 B+C 메트릭")
+    lines.append("")
+    lines.append(
+        "| 모델 | 평균 적중 | std | 5+ 적중율 | baseline 대비 | top6 확률합 | "
+        "top10 적중 | 평균 순위 | log-like |"
+    )
+    lines.append("|---|---|---|---|---|---|---|---|---|")
+    for name, m in metrics.items():
+        b: BMetrics = m["b"]
+        c: CMetrics = m["c"]
+        lines.append(
+            f"| {name} | {b.mean_hits:.3f} | {b.std_hits:.3f} | "
+            f"{b.high_tier_rate:.3%} | {b.baseline_improvement_pct:+.1f}% | "
+            f"{c.top6_prob_sum:.4f} | {c.top10_hits:.2f} | "
+            f"{c.mean_rank:.2f} | {c.log_likelihood:.3f} |"
+        )
+    lines.append("")
+    lines.append("## 적중 개수 분포")
+    lines.append("")
+    for name, m in metrics.items():
+        b: BMetrics = m["b"]
+        dist_str = ", ".join(f"{k}={v}" for k, v in sorted(b.hit_distribution.items()))
+        lines.append(f"- **{name}**: {dist_str}")
+    lines.append("")
+    lines.append("## 번호대 편향 (예측 질량 vs 실제 당첨 비율)")
+    lines.append("")
+    for name, m in metrics.items():
+        c: CMetrics = m["c"]
+        lines.append(f"### {name}")
+        lines.append("")
+        lines.append("| 구간 | 예측 질량 | 실제 비율 | 편차 |")
+        lines.append("|---|---|---|---|")
+        for zone in c.zone_predicted_mass.keys():
+            pred = c.zone_predicted_mass[zone]
+            actual = c.zone_actual_rate[zone]
+            lines.append(
+                f"| {zone} | {pred:.3f} | {actual:.3f} | {pred - actual:+.3f} |"
+            )
+        lines.append("")
+
+    path.write_text("\n".join(lines), encoding="utf-8")

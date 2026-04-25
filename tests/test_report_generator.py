@@ -59,3 +59,34 @@ def test_write_metrics_summary_json_contains_b_and_c(tmp_path):
     assert "models" in data
     assert data["models"]["Stub"]["b"]["mean_hits"] == b.mean_hits
     assert data["models"]["Stub"]["c"]["top6_prob_sum"] == c.top6_prob_sum
+
+
+from validator.report_generator import write_report_md
+
+
+def test_markdown_report_includes_both_models_and_metrics(tmp_path):
+    r1 = _fake_result("Ultimate Ensemble")
+    r2 = _fake_result("Stacking Ensemble")
+    results = {"Ultimate Ensemble": r1, "Stacking Ensemble": r2}
+    metrics = {}
+    for name, result in results.items():
+        b = compute_b_metrics(
+            [[dr.predictions[0]] for dr in result.draw_results],
+            [dr.actual for dr in result.draw_results],
+        )
+        c = compute_c_metrics(
+            [dr.probability for dr in result.draw_results],
+            [dr.actual for dr in result.draw_results],
+        )
+        metrics[name] = {"b": b, "c": c}
+
+    out = tmp_path / "report.md"
+    cfg = ValidatorConfig()
+    write_report_md(metrics, cfg, out)
+    text = out.read_text()
+
+    assert "Ultimate Ensemble" in text
+    assert "Stacking Ensemble" in text
+    assert "평균 적중" in text
+    assert "top6" in text.lower()
+    assert "0.8" in text  # baseline 언급
