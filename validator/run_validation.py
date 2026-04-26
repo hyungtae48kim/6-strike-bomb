@@ -52,6 +52,8 @@ def main(argv=None) -> int:
                         help="난수 시드. 기본 42.")
     parser.add_argument("--out", type=str, default=None,
                         help="결과 디렉토리 (기본 validation_results/<timestamp>/)")
+    parser.add_argument("--enable-zone-calibration", action="store_true", default=False,
+                        help="Ultimate Ensemble에 zone-target scaling 적용.")
     args = parser.parse_args(argv)
 
     cfg_kwargs = {}
@@ -77,6 +79,11 @@ def main(argv=None) -> int:
     print(f"[validator] 총 {len(df)}회차 데이터 로드")
 
     specs = get_ensemble_specs()
+    if args.enable_zone_calibration:
+        for spec in specs:
+            if spec.name == "Ultimate Ensemble":
+                spec.kwargs = {**spec.kwargs, "enable_zone_calibration": True}
+        print("[validator] Ultimate Ensemble zone calibration 활성")
     print(f"[validator] 평가 대상: {[s.name for s in specs]}")
 
     engine = BacktestEngine(df, config)
