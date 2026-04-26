@@ -52,6 +52,9 @@ def main(argv=None) -> int:
                         help="난수 시드. 기본 42.")
     parser.add_argument("--out", type=str, default=None,
                         help="결과 디렉토리 (기본 validation_results/<timestamp>/)")
+    parser.add_argument("--temperature", type=float, default=None,
+                        help="Ultimate Ensemble 통합 분포에 적용할 sharpening τ. "
+                             "권장 0.5~0.7. 미지정 시 sharpening 없음.")
     args = parser.parse_args(argv)
 
     cfg_kwargs = {}
@@ -77,6 +80,11 @@ def main(argv=None) -> int:
     print(f"[validator] 총 {len(df)}회차 데이터 로드")
 
     specs = get_ensemble_specs()
+    if args.temperature is not None:
+        for spec in specs:
+            if spec.name == "Ultimate Ensemble":
+                spec.kwargs = {**spec.kwargs, "sharpening_temperature": args.temperature}
+        print(f"[validator] Ultimate Ensemble sharpening τ={args.temperature}")
     print(f"[validator] 평가 대상: {[s.name for s in specs]}")
 
     engine = BacktestEngine(df, config)
