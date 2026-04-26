@@ -16,6 +16,48 @@ from .deepsets_model import DeepSetsModel
 from .enums import AlgorithmType
 
 
+# 번호대 (zone) 정의 — array index 기준 (0-44가 번호 1-45에 대응)
+ZONE_RANGES = [(0, 10), (10, 20), (20, 30), (30, 40), (40, 45)]
+
+
+def _compute_zone_targets(df: pd.DataFrame) -> np.ndarray:
+    """학습 데이터에서 zone별 실제 당첨 비율(target)을 계산한다."""
+    counts = np.zeros(5, dtype=float)
+    for i in range(1, 7):
+        col = f"drwtNo{i}"
+        if col not in df.columns:
+            continue
+        for num in df[col].astype(int):
+            idx = num - 1  # 1-indexed → 0-indexed
+            for zone_idx, (start, end) in enumerate(ZONE_RANGES):
+                if start <= idx < end:
+                    counts[zone_idx] += 1
+                    break
+    total = counts.sum()
+    if total <= 0:
+        return np.array([10/45, 10/45, 10/45, 10/45, 5/45])
+    return counts / total
+
+
+def _apply_zone_calibration(probs: np.ndarray, zone_targets: np.ndarray) -> np.ndarray:
+    """zone별 예측 질량을 target과 일치하도록 비례 scaling 후 정규화한다.
+
+    같은 zone 내 상대 비율은 보존된다. zone 질량이 0이면 target을 균등 분배.
+    """
+    out = np.asarray(probs, dtype=float).copy()
+    for (start, end), target in zip(ZONE_RANGES, zone_targets):
+        zone_mass = out[start:end].sum()
+        if zone_mass > 1e-12:
+            out[start:end] = out[start:end] * (target / zone_mass)
+        else:
+            # 입력 질량 0인 zone — target을 zone 내 균등 분배
+            out[start:end] = target / (end - start)
+    s = out.sum()
+    if s <= 0:
+        return np.ones(len(probs)) / len(probs)
+    return out / s
+
+
 class UltimateEnsembleModel(LottoModel):
     """
     Ultimate 메타 앙상블 로또 예측 모델.
@@ -42,10 +84,13 @@ class UltimateEnsembleModel(LottoModel):
 
     def __init__(self, weights: Optional[Dict[str, float]] = None,
                  enable_diversity: bool = True,
-                 diversity_weight: float = 0.1):
+                 diversity_weight: float = 0.1,
+                 enable_zone_calibration: bool = False):
         self.weights = weights or {}
         self.enable_diversity = enable_diversity
         self.diversity_weight = diversity_weight
+        self.enable_zone_calibration = enable_zone_calibration
+        self._zone_targets: Optional[np.ndarray] = None
 
         # 모든 서브 모델 초기화 (DeepSets 추가)
         self.models = {
@@ -76,6 +121,11 @@ class UltimateEnsembleModel(LottoModel):
         print("=" * 50)
 
         self._train_df = df
+
+        # zone calibration 활성 시 학습 데이터에서 zone target 계산
+        if self.enable_zone_calibration:
+            self._zone_targets = _compute_zone_targets(df)
+            print(f"\n[zone calibration] zone targets: {self._zone_targets.round(4).tolist()}")
 
         for name, model in self.models.items():
             print(f"\n[{name}] 학습 중...")
@@ -195,7 +245,13 @@ class UltimateEnsembleModel(LottoModel):
                              self.diversity_weight * diversity_bonus
 
         # 정규화
-        self._probability_dist = combined_probs / combined_probs.sum()
+        combined_probs = combined_probs / combined_probs.sum()
+
+        # Zone calibration (옵션) — train 데이터의 zone 분포에 정렬
+        if self.enable_zone_calibration and self._zone_targets is not None:
+            combined_probs = _apply_zone_calibration(combined_probs, self._zone_targets)
+
+        self._probability_dist = combined_probs
 
     def get_probability_distribution(self) -> np.ndarray:
         """45차원 확률 벡터 반환"""
