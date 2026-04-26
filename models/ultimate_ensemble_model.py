@@ -16,6 +16,24 @@ from .deepsets_model import DeepSetsModel
 from .enums import AlgorithmType
 
 
+def _apply_temperature(probs: np.ndarray, t: float) -> np.ndarray:
+    """확률 분포에 temperature scaling을 적용한다.
+
+    softmax(log(p) / t) 형태. t<1이면 sharper, t>1이면 flatter.
+    log 연산의 0 처리 위해 1e-12 floor 적용. 결과는 합이 1로 정규화된다.
+    """
+    if t is None or t <= 0:
+        return probs
+    log_p = np.log(np.asarray(probs, dtype=float) + 1e-12)
+    scaled = log_p / float(t)
+    scaled -= scaled.max()  # softmax 안정화
+    exp_p = np.exp(scaled)
+    s = exp_p.sum()
+    if s <= 0:
+        return np.ones(len(probs)) / len(probs)
+    return exp_p / s
+
+
 class UltimateEnsembleModel(LottoModel):
     """
     Ultimate 메타 앙상블 로또 예측 모델.
@@ -42,10 +60,12 @@ class UltimateEnsembleModel(LottoModel):
 
     def __init__(self, weights: Optional[Dict[str, float]] = None,
                  enable_diversity: bool = True,
-                 diversity_weight: float = 0.1):
+                 diversity_weight: float = 0.1,
+                 sharpening_temperature: Optional[float] = None):
         self.weights = weights or {}
         self.enable_diversity = enable_diversity
         self.diversity_weight = diversity_weight
+        self.sharpening_temperature = sharpening_temperature
 
         # 모든 서브 모델 초기화 (DeepSets 추가)
         self.models = {
@@ -195,7 +215,13 @@ class UltimateEnsembleModel(LottoModel):
                              self.diversity_weight * diversity_bonus
 
         # 정규화
-        self._probability_dist = combined_probs / combined_probs.sum()
+        combined_probs = combined_probs / combined_probs.sum()
+
+        # Temperature sharpening (옵션)
+        if self.sharpening_temperature is not None and self.sharpening_temperature > 0:
+            combined_probs = _apply_temperature(combined_probs, self.sharpening_temperature)
+
+        self._probability_dist = combined_probs
 
     def get_probability_distribution(self) -> np.ndarray:
         """45차원 확률 벡터 반환"""
