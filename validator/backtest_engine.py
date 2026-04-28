@@ -59,8 +59,12 @@ class BacktestEngine:
                 pass
         return [sorted(list(model.predict())) for _ in range(k)]
 
-    def run_model(self, spec: ModelSpec) -> ModelBacktestResult:
-        """단일 모델에 대해 Walk-Forward 백테스트를 수행한다."""
+    def run_model(self, spec: ModelSpec, profiler=None) -> ModelBacktestResult:
+        """단일 모델에 대해 Walk-Forward 백테스트를 수행한다.
+
+        profiler: SubmodelProfiler — 인스턴스가 주어지면 chunk 단위로
+        current_model._model_probabilities 스냅샷을 기록한다.
+        """
         set_seeds(self.config.random_seed)
         eval_range = self._eval_range()
         result = ModelBacktestResult(model_name=spec.name)
@@ -68,13 +72,31 @@ class BacktestEngine:
         chunk = self.config.retrain_chunk_size
         eval_indices = list(eval_range)
         current_model = None
+        chunk_submodel_probs = None
+        chunk_actuals: List[List[int]] = []
+
+        def _flush_chunk():
+            if profiler is not None and chunk_submodel_probs and chunk_actuals:
+                profiler.record_chunk(chunk_submodel_probs, list(chunk_actuals))
 
         for i, idx in enumerate(eval_indices):
             if i % chunk == 0:
+                # 이전 chunk 마무리 — profiler에 누적
+                _flush_chunk()
+                chunk_actuals = []
                 train_df = self.df.iloc[:idx]
                 current_model = spec.instantiate()
                 with contextlib.redirect_stdout(io.StringIO()):
                     current_model.train(train_df)
+                # 학습 직후 submodel 분포 스냅샷
+                snap = getattr(current_model, "_model_probabilities", None)
+                if profiler is not None and snap:
+                    chunk_submodel_probs = {
+                        name: np.asarray(p, dtype=float).copy()
+                        for name, p in snap.items()
+                    }
+                else:
+                    chunk_submodel_probs = None
 
             row = self.df.iloc[idx]
             predictions = self._predict_k(current_model, self.config.predictions_per_draw)
@@ -87,18 +109,30 @@ class BacktestEngine:
             if probability.shape != (45,):
                 probability = np.ones(45) / 45
 
+            actual = self._extract_actual(row)
+            chunk_actuals.append(actual)
+
             result.draw_results.append(DrawResult(
                 draw_no=int(row["drwNo"]),
                 predictions=predictions,
                 probability=probability,
-                actual=self._extract_actual(row),
+                actual=actual,
             ))
 
+        # 마지막 chunk flush
+        _flush_chunk()
         return result
 
-    def run_all(self, specs: List[ModelSpec]) -> Dict[str, ModelBacktestResult]:
-        """여러 모델을 순차적으로 백테스트한다."""
-        return {spec.name: self.run_model(spec) for spec in specs}
+    def run_all(self, specs: List[ModelSpec], profiler=None) -> Dict[str, ModelBacktestResult]:
+        """여러 모델을 순차적으로 백테스트한다.
+
+        profiler: 주어지면 Ultimate Ensemble에만 적용된다 (서브모델 보유 모델).
+        """
+        out: Dict[str, ModelBacktestResult] = {}
+        for spec in specs:
+            target = profiler if spec.name == "Ultimate Ensemble" else None
+            out[spec.name] = self.run_model(spec, profiler=target)
+        return out
 
 
 def save_checkpoint(

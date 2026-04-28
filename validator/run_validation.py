@@ -8,6 +8,7 @@
 5. CSV/JSON/MD/PNG + 체크포인트 저장
 """
 import argparse
+import json
 import sys
 import time
 from datetime import datetime
@@ -25,6 +26,7 @@ from validator.report_generator import (
     write_raw_predictions_csv,
     write_report_md,
 )
+from validator.submodel_profiler import SubmodelProfiler
 
 
 def _compute_metrics(results):
@@ -52,6 +54,12 @@ def main(argv=None) -> int:
                         help="난수 시드. 기본 42.")
     parser.add_argument("--out", type=str, default=None,
                         help="결과 디렉토리 (기본 validation_results/<timestamp>/)")
+    parser.add_argument("--profile-submodels", action="store_true", default=False,
+                        help="Ultimate Ensemble의 서브모델별 평균 hit를 측정해 "
+                             "submodel_profile.json으로 저장한다.")
+    parser.add_argument("--submodel-weights", type=str, default=None,
+                        help="JSON 파일 경로. {model_name: weight} 형태의 "
+                             "Ultimate Ensemble 가중치 오버라이드.")
     args = parser.parse_args(argv)
 
     cfg_kwargs = {}
@@ -77,13 +85,31 @@ def main(argv=None) -> int:
     print(f"[validator] 총 {len(df)}회차 데이터 로드")
 
     specs = get_ensemble_specs()
+    if args.submodel_weights:
+        weights_path = Path(args.submodel_weights)
+        with weights_path.open("r", encoding="utf-8") as f:
+            override_weights = json.load(f)
+        for spec in specs:
+            if spec.name == "Ultimate Ensemble":
+                spec.kwargs = {**spec.kwargs, "weights": override_weights}
+        print(f"[validator] Ultimate Ensemble 가중치 오버라이드: {weights_path}")
     print(f"[validator] 평가 대상: {[s.name for s in specs]}")
+
+    profiler = SubmodelProfiler() if args.profile_submodels else None
+    if profiler is not None:
+        print("[validator] 서브모델 프로파일링 활성")
 
     engine = BacktestEngine(df, config)
     t0 = time.time()
-    results = engine.run_all(specs)
+    results = engine.run_all(specs, profiler=profiler)
     elapsed = time.time() - t0
     print(f"[validator] 백테스트 완료 ({elapsed:.0f}초)")
+
+    if profiler is not None:
+        profile_path = out_dir / "submodel_profile.json"
+        with profile_path.open("w", encoding="utf-8") as f:
+            json.dump(profiler.aggregate(), f, ensure_ascii=False, indent=2)
+        print(f"[validator] 서브모델 프로파일 저장: {profile_path}")
 
     save_checkpoint(results, out_dir / "checkpoint.json")
     metrics = _compute_metrics(results)
