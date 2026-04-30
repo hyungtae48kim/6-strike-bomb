@@ -1,0 +1,13 @@
+{
+  "Pattern Analysis": 2.0,
+  "Community": 1.7,
+  "DeepSets": 1.4,
+  "LSTM": 1.2,
+  "PageRank": 1.2,
+  "Monte Carlo": 1.1,
+  "Markov Chain": 1.0,
+  "GNN": 0.7,
+  "Stats Based": 0.1,
+  "Bayes Theorem": 0.1,
+  "Transformer": 0.1
+}
