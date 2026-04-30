@@ -423,7 +423,7 @@ Expected: 5 tests failed/errored with ImportError or AttributeError.
 
 - [ ] **Step 3: CMetrics 및 compute_c_metrics 구현**
 
-`validator/metrics.py` 하단에 추가:
+`validator/metrics.py` 하단에 추가 (모듈 상단 import에 `from scipy.stats import rankdata` 추가):
 ```python
 @dataclass
 class CMetrics:
@@ -468,9 +468,9 @@ def compute_c_metrics(
         actual_idx = [n - 1 for n in actual]
         top6_sums.append(float(probs[actual_idx].sum()))
 
-        order = np.argsort(-probs)
-        rank_of = {int(idx): rank + 1 for rank, idx in enumerate(order)}
-        ranks = [rank_of[i] for i in actual_idx]
+        # 동순위는 평균 랭크로 처리 (균등분포에서 mean_rank ≈ 23이 되도록)
+        all_ranks = rankdata(-probs, method="average")
+        ranks = [float(all_ranks[i]) for i in actual_idx]
         ranks_collected.extend(ranks)
         top10_hit_counts.append(float(sum(1 for r in ranks if r <= 10)))
 
@@ -784,9 +784,10 @@ class BacktestEngine:
         self.config = config
 
     def _eval_range(self) -> range:
-        """평가할 회차의 인덱스 범위."""
+        """평가할 회차의 인덱스 범위. 학습 데이터가 부족하면 자동으로 축소된다."""
         total = len(self.df)
-        window = min(self.config.eval_window_draws, total - self.MIN_TRAIN_DRAWS)
+        min_train = min(self.MIN_TRAIN_DRAWS, max(1, total // 2))
+        window = min(self.config.eval_window_draws, total - min_train)
         window = max(0, window)
         start = total - window
         return range(start, total)
