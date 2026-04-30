@@ -84,6 +84,8 @@ if st.sidebar.button("📥 데이터 업데이트 (Update Data)"):
         history_manager.update_hit_counts(df)
         if "성공" in message:
             st.sidebar.success(message)
+        elif "새로운 데이터가 없습니다" in message:
+            st.sidebar.info(message)
         else:
             st.sidebar.warning(message)
 
