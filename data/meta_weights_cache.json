@@ -1,13 +1,14 @@
 {
-  "Pattern Analysis": 2.0,
-  "Community": 1.7,
-  "DeepSets": 1.4,
-  "LSTM": 1.2,
-  "PageRank": 1.2,
-  "Monte Carlo": 1.1,
-  "Markov Chain": 1.0,
-  "GNN": 0.7,
-  "Stats Based": 0.1,
-  "Bayes Theorem": 0.1,
-  "Transformer": 0.1
+  "Stats Based": 0.9748452355305354,
+  "GNN": 1.7643832970547328,
+  "Bayes Theorem": 2.0,
+  "LSTM": 1.7643832970547328,
+  "Transformer": 1.7643832970547328,
+  "DeepSets": 1.7643832970547328,
+  "PageRank": 1.7643832970547328,
+  "Community": 1.7643832970547328,
+  "Markov Chain": 1.7643832970547328,
+  "Pattern Analysis": 1.7643832970547328,
+  "Monte Carlo": 1.7643832970547328,
+  "Stacking Ensemble": 0.18053288782418975
 }

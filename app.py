@@ -66,7 +66,7 @@ def create_model(alg_type: AlgorithmType, weights: dict = None):
         AlgorithmType.PATTERN: lambda: PatternModel(),
         AlgorithmType.MONTECARLO: lambda: MonteCarloModel(n_simulations=5000),
         AlgorithmType.ULTIMATE: lambda: UltimateEnsembleModel(weights or {}),
-        AlgorithmType.STACKING: lambda: StackingEnsembleModel(),
+        AlgorithmType.STACKING: lambda: StackingEnsembleModel(weights=weights or {}),
     }
 
     factory = model_map.get(alg_type)

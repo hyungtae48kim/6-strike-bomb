@@ -91,6 +91,7 @@ class HistoryManager:
         if updated:
             hist_df.to_csv(HISTORY_FILE, index=False)
             print("Updated hit counts for past predictions.")
+            self.sync_weights_cache()
 
     def get_weights(self) -> Dict[str, float]:
         """
@@ -207,6 +208,27 @@ class HistoryManager:
                 weights = {k: v / max_weight * 2.0 for k, v in weights.items()}
 
         return weights
+
+    def sync_weights_cache(self) -> Dict[str, float]:
+        """
+        get_advanced_weights() 결과를 meta_weights_cache.json에 저장.
+        검증된 hit_count 데이터가 있을 때만 갱신 (부트스트랩 가드).
+        """
+        if not os.path.exists(HISTORY_FILE):
+            return {}
+        df = pd.read_csv(HISTORY_FILE)
+        if df[df['hit_count'] != -1].empty:
+            return {}
+        try:
+            from utils.meta_learner import MetaLearner
+            weights = self.get_advanced_weights()
+            if weights:
+                MetaLearner().save_cached_weights(weights)
+                print(f"meta_weights_cache.json 갱신 완료: {len(weights)}개 알고리즘")
+            return weights
+        except Exception as e:
+            print(f"가중치 캐시 갱신 실패: {e}")
+            return {}
 
     def get_algorithm_stats(self) -> Dict[str, Dict]:
         """

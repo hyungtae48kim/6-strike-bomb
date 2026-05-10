@@ -103,12 +103,21 @@ class UltimateEnsembleModel(LottoModel):
         print("=" * 50)
 
     def _get_model_weight(self, model_name: str) -> float:
-        """모델별 가중치 반환"""
-        # 사전 정의된 가중치가 있으면 사용
+        """우선순위: self.weights > MetaLearner 캐시 > default_weights > 1.0"""
+        # 1순위: 명시적으로 주입된 가중치
         if model_name in self.weights:
             return max(self.weights[model_name], 0.1)
 
-        # 기본 가중치 (모델 유형별 차등)
+        # 2순위: 캐시된 메타 학습 가중치
+        try:
+            from utils.meta_learner import MetaLearner
+            cached = MetaLearner().load_cached_weights()
+            if cached and model_name in cached:
+                return max(cached[model_name], 0.1)
+        except Exception:
+            pass
+
+        # 3순위: 모델 유형별 기본 가중치 (정적 prior)
         default_weights = {
             AlgorithmType.STATS.value: 1.0,
             AlgorithmType.BAYES.value: 1.0,
@@ -122,17 +131,6 @@ class UltimateEnsembleModel(LottoModel):
             AlgorithmType.PATTERN.value: 1.2,
             AlgorithmType.MONTECARLO.value: 1.3,
         }
-
-        # 캐시된 메타 학습 가중치 시도
-        try:
-            from utils.meta_learner import MetaLearner
-            ml = MetaLearner()
-            cached = ml.load_cached_weights()
-            if cached and model_name in cached:
-                return max(cached[model_name], 0.1)
-        except Exception:
-            pass
-
         return default_weights.get(model_name, 1.0)
 
     def _compute_diversity_bonus(self) -> np.ndarray:

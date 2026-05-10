@@ -40,12 +40,30 @@ class StackingEnsembleModel(LottoModel):
         AlgorithmType.STACKING,
     ]
 
-    def __init__(self, meta_model_type: str = 'ridge'):
+    def __init__(self, meta_model_type: str = 'ridge',
+                 weights: Optional[Dict[str, float]] = None,
+                 weight_blend: float = 0.3):
         """
         Args:
             meta_model_type: 메타 모델 유형 ('ridge' | 'logistic')
+            weights: hit_count 기반 알고리즘 가중치 ({알고리즘명: 가중치}).
+                     None이면 meta_weights_cache.json에서 fallback 로드.
+            weight_blend: 메타 모델 출력과 가중 평균의 blend 비율
+                         (0=메타만, 1=가중평균만)
         """
         self.meta_model_type = meta_model_type
+
+        # weights가 None이면 캐시에서 fallback 로드
+        if weights is None:
+            try:
+                from utils.meta_learner import MetaLearner
+                cached = MetaLearner().load_cached_weights()
+                weights = cached or {}
+            except Exception:
+                weights = {}
+
+        self.weights = weights
+        self.weight_blend = weight_blend
 
         # 빠른 모델만 사용 (LSTM/Transformer/GNN/DeepSets 제외)
         self.sub_models = {
@@ -181,18 +199,21 @@ class StackingEnsembleModel(LottoModel):
         self._compute_probability_distribution()
 
     def _compute_simple_ensemble(self):
-        """메타 특성 부족 시 단순 앙상블 사용"""
-        probs_list = []
+        """메타 특성 부족 시 가중 앙상블 사용 (hit_count 가중치 반영)"""
+        weighted_sum = np.zeros(45)
+        total_weight = 0.0
         for name, model in self.sub_models.items():
             try:
                 probs = model.get_probability_distribution()
                 if probs is not None and len(probs) == 45:
-                    probs_list.append(probs)
+                    w = max(self.weights.get(name, 1.0), 0.1)
+                    weighted_sum += probs * w
+                    total_weight += w
             except Exception:
                 pass
 
-        if probs_list:
-            combined = np.mean(probs_list, axis=0)
+        if total_weight > 0:
+            combined = weighted_sum / total_weight
             self._probability_dist = combined / combined.sum()
         else:
             self._probability_dist = np.ones(45) / 45
@@ -235,7 +256,28 @@ class StackingEnsembleModel(LottoModel):
 
         # 음수 클리핑 후 정규화
         meta_probs = np.clip(meta_probs, 1e-10, None)
-        self._probability_dist = meta_probs / meta_probs.sum()
+        meta_probs = meta_probs / meta_probs.sum()
+
+        # hit_count 가중 평균과 blend (weights가 있을 때만)
+        if self.weights and self.weight_blend > 0:
+            weighted_sum = np.zeros(45)
+            total_w = 0.0
+            offset = 0
+            for name in self.sub_models.keys():
+                sub_probs = np.array(feature_row[offset:offset + 45])
+                w = max(self.weights.get(name, 1.0), 0.1)
+                weighted_sum += sub_probs * w
+                total_w += w
+                offset += 45
+
+            if total_w > 0:
+                weighted_avg = weighted_sum / total_w
+                weighted_avg = weighted_avg / weighted_avg.sum()
+                blended = (1 - self.weight_blend) * meta_probs + self.weight_blend * weighted_avg
+                self._probability_dist = blended / blended.sum()
+                return
+
+        self._probability_dist = meta_probs
 
     def get_probability_distribution(self) -> np.ndarray:
         """45차원 확률 벡터 반환"""
