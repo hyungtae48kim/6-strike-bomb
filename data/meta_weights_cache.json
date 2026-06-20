@@ -1,5 +1,5 @@
 {
-  "Stats Based": 1.6947070501203876,
+  "Stats Based": 0.9693657379325206,
   "GNN": 1.7643832970547328,
   "Bayes Theorem": 2.0,
   "LSTM": 1.7643832970547328,
@@ -10,5 +10,5 @@
   "Markov Chain": 1.7643832970547328,
   "Pattern Analysis": 1.7643832970547328,
   "Monte Carlo": 1.7643832970547328,
-  "Stacking Ensemble": 0.9105478962993849
+  "Stacking Ensemble": 0.8346163920727728
 }
