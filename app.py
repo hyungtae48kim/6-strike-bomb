@@ -21,6 +21,7 @@ from models.stacking_ensemble_model import StackingEnsembleModel
 from models.enums import AlgorithmType
 from utils.analysis import LottoAnalyzer, CombinationFilter
 from utils.wheeling import WheelingSystem
+from utils.ev_optimizer import build_ev_rows
 
 st.set_page_config(page_title="6-Strike-Bomb 로또 예측기", page_icon="🎱", layout="wide")
 
@@ -398,6 +399,46 @@ if generate_clicked:
         import traceback
         with st.expander("상세 오류 정보"):
             st.text(traceback.format_exc())
+
+# ─────────────────────────────────────────────────────────
+# 💰 EV 최적 조합 (Expected-Value Optimized Combinations)
+# ─────────────────────────────────────────────────────────
+st.markdown("---")
+st.subheader("💰 EV 최적 조합 (Expected-Value Optimized)")
+st.info(
+    "⚠️ **당첨 확률은 무작위와 동일합니다.** 이 기능은 당첨 확률을 높이지 "
+    "않습니다. 통계적으로 '비인기 조합'을 골라 **당첨됐을 때 다른 사람과 "
+    "나눌 인원을 줄여 기대 수령액(EV)만 높입니다.** 로또에서 수학적으로 "
+    "유일하게 조절 가능한 값입니다."
+)
+
+col_ev1, col_ev2 = st.columns(2)
+with col_ev1:
+    ev_n = st.slider("생성할 조합 수 (Number of tickets)", 1, 10, 5)
+with col_ev2:
+    ev_aggr = st.slider("비인기 강도 (Aggressiveness)", 0.0, 2.0, 1.0, 0.1)
+
+if st.button("💰 EV 최적 조합 생성 (Generate EV-Optimized)"):
+    df_ev = load_data()
+    if df_ev.empty:
+        st.warning("데이터가 없습니다. 먼저 데이터를 업데이트하세요.")
+    else:
+        with st.spinner("비인기 조합 탐색 중..."):
+            ev_rows = build_ev_rows(df_ev, n_tickets=ev_n,
+                                    aggressiveness=ev_aggr, pool_size=20000)
+        for idx, row in enumerate(ev_rows, start=1):
+            nums = " · ".join(f"{n:02d}" for n in row["combo"])
+            tags = ", ".join(row["reasons"]) if row["reasons"] else "인기 요인 없음"
+            st.markdown(
+                f"**{idx}세트:** `{nums}`  \n"
+                f"인기도 {row['popularity']:.3f} · "
+                f"**EV 지수 {row['ev_index']:.2f}배** (평균 대비) · "
+                f"근거: {tags}"
+            )
+        st.caption(
+            "EV 지수 = 평균 조합 대비 기대 수령액 배수. 1보다 크면 당첨 시 "
+            "평균보다 많이 받을 것으로 기대됨(확률은 동일)."
+        )
 
 # Latest winning numbers
 st.markdown("---")
