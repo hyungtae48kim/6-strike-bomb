@@ -27,7 +27,7 @@ def test_generate_returns_valid_tickets():
         assert combo == sorted(combo)
         assert all(1 <= n <= 45 for n in combo)
         assert 0.0 <= r["popularity"] <= 1.0
-        assert r["ev_index"] > 0
+        assert r["ev_index"] > 1.0
         assert isinstance(r["reasons"], list)
 
 
@@ -53,3 +53,11 @@ def test_build_ev_rows_helper():
                                "drwtNo4", "drwtNo5", "drwtNo6", "bnusNo"])
     rows = build_ev_rows(df, n_tickets=3, pool_size=2000)
     assert len(rows) == 3
+
+
+import pytest
+
+def test_generate_raises_when_pool_too_small():
+    opt = EVOptimizer(PopularityModel(), seed=1)
+    with pytest.raises(ValueError):
+        opt.generate(n_tickets=10, pool_size=5)
