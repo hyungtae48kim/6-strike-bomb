@@ -2,9 +2,27 @@
 
 ## 프로젝트 개요
 
-한국 로또 6/45 번호 예측 시스템입니다. 12개의 AI 모델을 통합한 메타 앙상블 시스템으로 예측 번호를 생성합니다.
+한국 로또 6/45 번호 시스템입니다. 두 개의 독립된 계층으로 구성됩니다.
+
+1. **예측 계층** — 12개의 AI 모델을 통합한 메타 앙상블로 당첨 번호를 예측(레거시).
+2. **EV 최적화 계층** — 당첨 확률은 그대로 두고 **당첨 시 기대 수령액**을 최적화(현재 전략적 핵심).
+
+> ⚠️ **중요(설계 근거):** 로또 6/45는 기억 없는 균등 추첨이므로 **당첨 확률을
+> 높이는 예측은 수학적으로 불가능**하다(217건 실측 검증 완료, 카이제곱
+> p=0.408로 무작위와 완전 일치). 따라서 프로젝트의 전략적 방향은
+> "예측 정확도"에서 **EV 최적화**로 전환되었다. 자세한 배경은
+> [설계 문서](docs/superpowers/specs/2026-07-04-ev-optimization-design.md) 참조.
 
 ### 핵심 기능
+
+**EV 최적화 (현재 전략 핵심):**
+- 비인기 조합 생성 (통계적 인기도 최소화 → 당첨 시 분배 인원↓ → 기대 수령액↑)
+- 인간 번호선택 편향 7개 factor 기반 인기도 점수 (생일/낮은합계/연속수/등차·배수/용지격자/행운수/최근재사용)
+- EV 지수 산출 (평균 조합 대비 상대 기대 수령액 배수)
+- 1등 당첨자 수 실측 회귀 검증 및 factor 가중치 보정 (하이브리드)
+- **정직성 원칙**: 모든 산출물에 "당첨 확률은 개선되지 않음"을 명시
+
+**예측 (레거시 계층):**
 - 로또 당첨 번호 자동 수집 (동행복권 API)
 - 14개 알고리즘 지원 (Stats, GNN, Bayes, LSTM, Transformer, DeepSets, PageRank, Community, Markov, Pattern, MonteCarlo, Weighted/Ultimate/Stacking Ensemble)
 - 예측 피드백 루프 (과거 예측 결과 기반 알고리즘 가중치 동적 조정)
@@ -46,11 +64,15 @@
 │   ├── combination_scorer.py # 조건부 확률 기반 조합 평가
 │   ├── validation.py         # Walk-Forward 시간적 검증
 │   ├── wheeling.py           # 수학적 커버리지 휠링 시스템
-│   └── meta_learner.py       # BMA 및 교차검증 가중치 학습
+│   ├── meta_learner.py       # BMA 및 교차검증 가중치 학습
+│   ├── popularity_model.py   # [EV] 인기도 휴리스틱 점수 (7 factor)
+│   ├── ev_optimizer.py       # [EV] 비인기 조합 생성 + EV 지수 + 다양성
+│   └── winner_data.py        # [EV] 1등 당첨자 수/판매액 수집 (검증용)
 ├── data/                      # 데이터 파일들
 │   ├── lotto_history.csv     # 로또 당첨 번호 히스토리
-│   └── prediction_history.csv # 예측 히스토리 및 적중률
-├── verify_*.py               # 각종 검증 스크립트들
+│   ├── prediction_history.csv # 예측 히스토리 및 적중률
+│   └── winner_history.csv    # [EV] 회차별 1등 당첨자수/인당상금/총판매액
+├── verify_*.py               # 각종 검증 스크립트들 (verify_ev.py = EV 회귀 검증)
 └── requirements.txt          # Python 의존성
 ```
 
@@ -131,6 +153,39 @@ class LottoModel(ABC):
 
 - `MetaLearner`: Bayesian Model Averaging (BMA)으로 모델 확률 분포 통합
 - softmax 가중치, 캐시 저장/로드 지원
+
+### 9. EV 최적화 계층 (전략적 핵심)
+
+예측 파이프라인과 **완전히 독립**된 계층이다. 당첨 확률(`1/8,145,060`)은
+건드리지 않고, 파리뮤추얼(당첨자 분배) 구조를 이용해 **비인기 조합**을 골라
+당첨 시 기대 수령액만 높인다. `EV ∝ 1 / (1 + 기대 동반당첨자수)`.
+
+- **PopularityModel** ([popularity_model.py](utils/popularity_model.py)):
+  조합의 인기도 점수(`∈[0,1]`)를 7개 factor 가중합으로 산출.
+  factor = 생일편중/낮은합계/연속수/등차·배수/용지격자/행운수/최근재사용.
+  가중치는 `verify_ev.py` 회귀로 보정 가능(`set_weights`).
+  주의: `CombinationFilter`는 의도적으로 사용하지 않는다(현실성 필터가
+  오히려 인기 조합 쪽으로 결과를 몰기 때문).
+- **EVOptimizer** ([ev_optimizer.py](utils/ev_optimizer.py)):
+  고번호 가중 대량 샘플링 → 인기도 최소 선별 → 그리디 다양성 선택.
+  `ev_index(combo)`(평균 대비 배수), `generate(n_tickets, aggressiveness)`,
+  헬퍼 `build_ev_rows(df, ...)`(app.py에서 사용).
+- **winner_data** ([winner_data.py](utils/winner_data.py)):
+  동행복권 API에서 회차별 `firstPrzwnerCo`/`firstWinamnt`/`totSellamnt`를
+  수집해 `data/winner_history.csv`로 증분 저장(검증용 실측 데이터).
+- **verify_ev** ([verify_ev.py](verify_ev.py)):
+  당첨조합 인기도 점수로 실제 1등 당첨자 수를 회귀(`log(판매액)` 통제).
+  in-sample R²는 참고용, 실제 예측력은 교차검증 R²로 보고. `recent_reuse`는
+  시간 누수 방지를 위해 각 회차의 직전 회차만 참조해 계산. 검증 실패
+  (계수 비유의/음수)해도 정직하게 보고하고 기본 가중치를 유지한다.
+- **UI**: app.py의 'EV 최적 조합' 섹션(티켓 수·비인기 강도 슬라이더,
+  인기도·EV 지수·근거 태그 출력, "당첨 확률 불변" 경고 문구 필수).
+
+**EV 데이터 수집 실행:**
+```bash
+python -c "from utils.winner_data import fetch_winner_data as f; f(1, 1230)"
+python verify_ev.py   # 회귀 검증 및 가중치 보정 결과 출력
+```
 
 ## Claude Code로 작업하는 방법
 
@@ -261,7 +316,12 @@ streamlit run app.py
 - [verify_bayes.py](verify_bayes.py): 베이즈 모델 검증
 - [verify_feedback.py](verify_feedback.py): 피드백 시스템 검증
 - [verify_manual_update.py](verify_manual_update.py): 수동 입력 검증
+- [verify_ev.py](verify_ev.py): **EV 인기도 휴리스틱 vs 실제 1등 당첨자 수 회귀 검증**
 - [debug_fetch.py](debug_fetch.py): 데이터 수집 디버깅
+
+pytest 스위트(`tests/`)에는 EV 계층 단위 테스트가 포함된다:
+`test_popularity_model.py`, `test_ev_optimizer.py`, `test_winner_data.py`,
+`test_verify_ev.py`. 실행: `venv/bin/pytest tests/ -q`.
 
 ## 문제 해결
 
@@ -339,6 +399,9 @@ streamlit run app.py
 | 시간적 검증 | [validation.py](utils/validation.py) | Walk-Forward 검증, 과적합 탐지 |
 | 휠링 | [wheeling.py](utils/wheeling.py) | 수학적 커버리지 보장 축약 휠 |
 | 메타 학습 | [meta_learner.py](utils/meta_learner.py) | BMA, softmax 가중치, 캐시 |
+| **EV 인기도** | [popularity_model.py](utils/popularity_model.py) | 7개 편향 factor 인기도 점수, 보정 가능 가중치 |
+| **EV 최적화** | [ev_optimizer.py](utils/ev_optimizer.py) | 비인기 조합 생성, EV 지수, 다양성 선택 |
+| **EV 검증 데이터** | [winner_data.py](utils/winner_data.py) | 1등 당첨자 수/판매액 수집 (동행복권 API) |
 
 ### 핵심 기술
 1. **확률 분포 기반 통합**: 모든 모델이 45차원 확률 벡터 반환
