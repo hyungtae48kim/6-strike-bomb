@@ -39,9 +39,28 @@ FACTOR_LABELS = {
 
 
 class PopularityModel:
+    @staticmethod
+    def _validate_weights(weights: Dict[str, float]) -> None:
+        """가중치 키 및 합계 검증 (validate weight keys and sum)."""
+        expected_keys = set(DEFAULT_WEIGHTS.keys())
+        given_keys = set(weights.keys())
+        if given_keys != expected_keys:
+            missing = expected_keys - given_keys
+            extra = given_keys - expected_keys
+            raise ValueError(
+                f"가중치 키가 올바르지 않습니다 (invalid weight keys). "
+                f"누락(missing): {missing}, 추가됨(extra): {extra}"
+            )
+        if sum(weights.values()) <= 0:
+            raise ValueError("가중치 합이 0보다 커야 합니다 (weights must sum to > 0)")
+
     def __init__(self, df: pd.DataFrame = None, weights: Dict[str, float] = None,
                  recent_window: int = 10):
-        self.weights = dict(weights) if weights else dict(DEFAULT_WEIGHTS)
+        if weights is not None:
+            self._validate_weights(weights)
+            self.weights = dict(weights)
+        else:
+            self.weights = dict(DEFAULT_WEIGHTS)
         self.recent_window = recent_window
         self._recent_numbers = self._extract_recent(df) if df is not None else set()
 
@@ -66,6 +85,7 @@ class PopularityModel:
     @staticmethod
     def _low_sum(combo: List[int]) -> float:
         s = sum(combo)  # 21(최소)~255(최대). 낮을수록 생일편향 → 인기
+        # 90/170은 역대 당첨 합계 분포의 하위/상위 꼬리 근사값 (생일조합이 낮은 합계에 집중)
         if s <= 90:
             return 1.0
         if s >= 170:
@@ -118,7 +138,7 @@ class PopularityModel:
         cset = set(combo)
         for fam in FAMOUS_COMBOS:
             if len(cset & set(fam)) >= 5:
-                score = 1.0
+                score = max(score, 1.0)
         return min(score, 1.0)
 
     def _recent_reuse(self, combo: List[int]) -> float:
@@ -148,4 +168,5 @@ class PopularityModel:
         return [FACTOR_LABELS[f] for f in fs if fs[f] >= threshold]
 
     def set_weights(self, weights: Dict[str, float]):
+        self._validate_weights(weights)
         self.weights = dict(weights)

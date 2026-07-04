@@ -50,3 +50,49 @@ def test_reasons_returns_tags_for_high_factors():
     pm = PopularityModel()
     reasons = pm.reasons(POPULAR)
     assert "연속 번호" in reasons
+
+
+# ---- 경계값 테스트 (boundary tests) ----
+
+def test_low_sum_boundaries():
+    pm = PopularityModel()
+    # 합계 21 (<= 90) → 1.0
+    assert pm.factor_scores([1, 2, 3, 4, 5, 6])["low_sum"] == pytest.approx(1.0)
+    # 합계 219 (>= 170) → 0.0
+    assert pm.factor_scores([25, 30, 35, 40, 44, 45])["low_sum"] == pytest.approx(0.0)
+
+
+def test_arithmetic_detects_exact_progression():
+    pm = PopularityModel()
+    # 완전 등차수열: [5,10,15,20,25,30] → arithmetic == 1.0
+    assert pm.factor_scores([5, 10, 15, 20, 25, 30])["arithmetic"] == pytest.approx(1.0)
+    # 비패턴 조합: [3,8,14,27,33,41] → diffs=[5,6,13,6,8], 연속 동일 diff 없음 → 0.0
+    assert pm.factor_scores([3, 8, 14, 27, 33, 41])["arithmetic"] < 0.5
+
+
+def test_lucky_partial_signals():
+    pm = PopularityModel()
+    # 7 포함, 3 미포함, 유명 조합 아님 → lucky == 0.5
+    assert pm.factor_scores([7, 13, 22, 29, 34, 41])["lucky"] == pytest.approx(0.5)
+    # 7·3 모두 미포함, 유명 조합 아님 → lucky == 0.0
+    assert pm.factor_scores([11, 18, 24, 29, 35, 44])["lucky"] == pytest.approx(0.0)
+
+
+def test_grid_pattern_detects_column():
+    pm = PopularityModel()
+    # 1,8,15,22,29,36: 모두 (n-1)%7==0 → 동일 열 6개 → max_line=6 → 1.0
+    assert pm.factor_scores([1, 8, 15, 22, 29, 36])["grid_pattern"] == pytest.approx(1.0)
+    # 분산 조합 → grid_pattern < 1.0
+    assert pm.factor_scores([2, 10, 19, 27, 33, 44])["grid_pattern"] < 1.0
+
+
+def test_set_weights_rejects_bad_keys():
+    pm = PopularityModel()
+    # 부분 키 집합 (subset) → ValueError
+    with pytest.raises(ValueError):
+        pm.set_weights({"calendar_bias": 1.0})
+    # 알 수 없는 키 추가 (superset) → ValueError
+    bad_weights = dict(DEFAULT_WEIGHTS)
+    bad_weights["unknown_factor"] = 0.1
+    with pytest.raises(ValueError):
+        pm.set_weights(bad_weights)
